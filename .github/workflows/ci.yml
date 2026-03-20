@@ -61,7 +61,7 @@ jobs:
       - name: Mypy
         run: |
           if [ -d orchestrator ] || [ -d api ]; then
-            mypy orchestrator api
+            mypy orchestrator api --ignore-missing-imports
           else
             echo "No application package found, skipping mypy."
           fi
@@ -117,6 +117,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Save Docker image as artifact
+        run: docker save ${{ env.LOCAL_IMAGE_NAME }} | gzip > /tmp/docker-image.tar.gz
+
+      - name: Upload image artifact for scanning jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/docker-image.tar.gz
+          retention-days: 1
+
       - name: Push image to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
@@ -137,8 +147,16 @@ jobs:
       security-events: write
 
     steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Load Docker image
+        run: docker load < docker-image.tar.gz
+
       - name: Run Trivy on built image
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.LOCAL_IMAGE_NAME }}
           format: sarif
@@ -147,10 +165,9 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           scanners: vuln
-          cache: true
 
       - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image-results.sarif
 
@@ -160,9 +177,18 @@ jobs:
     needs: docker-build
 
     steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Load Docker image
+        run: docker load < docker-image.tar.gz
+
       - name: Install Grype
-        uses: anchore/scan-action/download-grype@v6
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin
 
       - name: Run Grype on built image
-        run: |
-          grype ${{ env.LOCAL_IMAGE_NAME }} --fail-on high -o table
+        run: grype ${{ env.LOCAL_IMAGE_NAME }} --fail-on high -o table

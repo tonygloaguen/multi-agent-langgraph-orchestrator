@@ -11,31 +11,40 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from orchestrator.workers.llm_provider import (
+    LLMInvocationError,
+    ProviderConfig,
+    ProviderStatus,
+    call_llm,
+)
+
 CLAUDE_BIN = "/home/gloaguen/.local/bin/claude"
 TIMEOUT = 120
 
+_CLAUDE_CONFIG = ProviderConfig(name="claude", bin_path=CLAUDE_BIN, timeout=TIMEOUT)
+
 
 def _call_claude(prompt: str) -> str:
-    """Appelle Claude Code CLI en mode non-interactif."""
-    import subprocess
+    """Appelle Claude Code CLI en mode non-interactif.
 
-    try:
-        result = subprocess.run(
-            [CLAUDE_BIN, "--print", "--output-format", "text"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Claude Code erreur (rc={result.returncode}) : {result.stderr[:300]}"
-            )
-        return result.stdout.strip()
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"Claude Code timeout après {TIMEOUT}s")
-    except FileNotFoundError:
-        raise RuntimeError(f"Claude Code non trouvé : {CLAUDE_BIN}")
+    Capture stdout ET stderr pour la détection de rate limit.
+    Lève LLMInvocationError (sous-classe RuntimeError) si rate-limited.
+    Lève RuntimeError pour les autres erreurs.
+    """
+    result = call_llm(_CLAUDE_CONFIG, prompt)
+
+    if result.is_ok:
+        return result.output
+
+    # Rate limit → erreur typée pour le fallback
+    if result.status == ProviderStatus.RATE_LIMITED:
+        raise LLMInvocationError(result)
+
+    # Autres erreurs → RuntimeError compatible avec le code existant
+    combined = (result.stdout + "\n" + result.stderr).strip()
+    raise RuntimeError(
+        f"Claude Code erreur (rc={result.rc}) : {combined[:500]}"
+    )
 
 
 def _clean_markdown(raw: str) -> str:
