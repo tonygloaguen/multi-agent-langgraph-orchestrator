@@ -196,5 +196,5 @@ jobs:
             | sh -s -- -b /usr/local/bin
 
       - name: Run Grype on built image
-        # --ignore-unfixed exclut les CVE sans correctif upstream (ex: openssl "won't fix")
-        run: grype ${{ env.LOCAL_IMAGE_NAME }} --fail-on high -o table --ignore-unfixed
+        # --only-fixed exclut les CVE sans correctif upstream (ex: openssl "won't fix")
+        run: grype ${{ env.LOCAL_IMAGE_NAME }} --fail-on high -o table --only-fixed
