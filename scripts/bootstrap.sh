@@ -62,6 +62,15 @@ command -v codex >/dev/null \
 chmod +x scripts/*.sh
 ok "Scripts exécutables"
 
+# RTK — hook global optionnel (réduit la consommation de tokens LLM)
+if command -v rtk >/dev/null 2>&1; then
+    rtk init --global
+    ok "RTK hook activé (compression tokens LLM)"
+else
+    warn "RTK non installé — optionnel : brew install rtk"
+    warn "  RTK réduit la consommation de tokens LLM de 60-90%"
+fi
+
 echo ""
 echo "======================================"
 echo -e "${GREEN} Bootstrap terminé avec succès.${NC}"

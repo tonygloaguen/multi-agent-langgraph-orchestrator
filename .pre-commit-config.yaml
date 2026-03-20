@@ -9,12 +9,22 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.0
+  - repo: local
     hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
+      - id: ruff-rtk
+        name: ruff lint (RTK)
+        # Si RTK est installé, compresse la sortie pour réduire les tokens LLM.
+        # Fallback transparent vers ruff natif si RTK absent.
+        entry: bash -c 'if command -v rtk >/dev/null 2>&1; then rtk ruff check --fix .; else ruff check --fix .; fi'
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: ruff-format-rtk
+        name: ruff format (RTK)
+        entry: bash -c 'if command -v rtk >/dev/null 2>&1; then rtk ruff format .; else ruff format .; fi'
+        language: system
+        types: [python]
+        pass_filenames: false
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.24.3
