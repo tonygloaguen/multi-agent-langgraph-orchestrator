@@ -4,6 +4,7 @@ Interface web de l'orchestrateur multi-agents.
 FastAPI + Server-Sent Events pour streaming temps réel.
 Lancer : uvicorn api.server:app --host 0.0.0.0 --port 8080 --reload
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +18,6 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Ajouter le projet au PYTHONPATH
@@ -35,22 +35,24 @@ _log_queue: asyncio.Queue = asyncio.Queue()
 
 # ─── Modèles ─────────────────────────────────────────────────────────────────
 
+
 class RunRequest(BaseModel):
     goal: str
     repo_path: str = ""
 
 
 class RunStatus(BaseModel):
-    run_id:    str
-    status:    str
-    goal:      str
+    run_id: str
+    status: str
+    goal: str
     repo_path: str
     started_at: str
-    tasks_total:     int = 0
+    tasks_total: int = 0
     tasks_completed: int = 0
 
 
 # ─── Routes API ──────────────────────────────────────────────────────────────
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
@@ -70,14 +72,14 @@ async def start_run(req: RunRequest, background_tasks=None):
     run_id = f"run-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
 
     _active_run = {
-        "run_id":          run_id,
-        "status":          "running",
-        "goal":            req.goal,
-        "repo_path":       req.repo_path,
-        "started_at":      datetime.now(timezone.utc).isoformat(),
-        "tasks_total":     0,
+        "run_id": run_id,
+        "status": "running",
+        "goal": req.goal,
+        "repo_path": req.repo_path,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "tasks_total": 0,
         "tasks_completed": 0,
-        "logs":            [],
+        "logs": [],
     }
 
     # Lancer le pipeline dans un thread séparé
@@ -114,22 +116,38 @@ async def get_history():
 
             first = events[0]
             completed = sum(1 for e in events if e.get("event") == "task_completed")
-            total     = next((e.get("task_count", 0) for e in events
-                              if e.get("event") == "plan_generated"), 0)
-            status    = next((e.get("event") for e in reversed(events)
-                              if e.get("event") in ("pipeline_completed", "pipeline_failed")),
-                             "running")
+            total = next(
+                (
+                    e.get("task_count", 0)
+                    for e in events
+                    if e.get("event") == "plan_generated"
+                ),
+                0,
+            )
+            status = next(
+                (
+                    e.get("event")
+                    for e in reversed(events)
+                    if e.get("event") in ("pipeline_completed", "pipeline_failed")
+                ),
+                "running",
+            )
 
-            history.append({
-                "run_id":          first.get("run_id", f.stem),
-                "started_at":      first.get("ts", ""),
-                "goal":            first.get("goal", ""),
-                "repo_path":       first.get("repo_path", ""),
-                "status":          "completed" if status == "pipeline_completed" else
-                                   "failed"    if status == "pipeline_failed" else "running",
-                "tasks_completed": completed,
-                "tasks_total":     total,
-            })
+            history.append(
+                {
+                    "run_id": first.get("run_id", f.stem),
+                    "started_at": first.get("ts", ""),
+                    "goal": first.get("goal", ""),
+                    "repo_path": first.get("repo_path", ""),
+                    "status": "completed"
+                    if status == "pipeline_completed"
+                    else "failed"
+                    if status == "pipeline_failed"
+                    else "running",
+                    "tasks_completed": completed,
+                    "tasks_total": total,
+                }
+            )
 
     return {"runs": history}
 
@@ -137,6 +155,7 @@ async def get_history():
 @app.get("/api/run/logs")
 async def stream_logs(request: Request):
     """Stream SSE des logs du run actif."""
+
     async def event_generator() -> AsyncGenerator[str, None]:
         # Envoyer les logs déjà présents
         if _active_run:
@@ -160,8 +179,8 @@ async def stream_logs(request: Request):
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control":               "no-cache",
-            "X-Accel-Buffering":           "no",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
             "Access-Control-Allow-Origin": "*",
         },
     )
@@ -178,6 +197,7 @@ async def stop_run():
 
 # ─── Pipeline async ──────────────────────────────────────────────────────────
 
+
 async def _run_pipeline_async(goal: str, repo_path: str, run_id: str) -> None:
     """Lance le pipeline dans un subprocess et streame les logs."""
     global _active_run
@@ -187,9 +207,12 @@ async def _run_pipeline_async(goal: str, repo_path: str, run_id: str) -> None:
     cmd = [
         sys.executable,
         str(PROJECT_ROOT / "orchestrator" / "state_machine_runner.py"),
-        "--goal", goal,
-        "--repo", repo_path or "",
-        "--run-id", run_id,
+        "--goal",
+        goal,
+        "--repo",
+        repo_path or "",
+        "--run-id",
+        run_id,
     ]
 
     env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}
@@ -208,7 +231,8 @@ async def _run_pipeline_async(goal: str, repo_path: str, run_id: str) -> None:
             if text:
                 # Nettoyer les codes ANSI
                 import re
-                clean = re.sub(r'\x1b\[[0-9;]*m', '', text)
+
+                clean = re.sub(r"\x1b\[[0-9;]*m", "", text)
                 await _push_log({"type": "log", "message": clean})
 
         await proc.wait()
@@ -240,4 +264,5 @@ async def _push_log(entry: dict) -> None:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8080, reload=False)

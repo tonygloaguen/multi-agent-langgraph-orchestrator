@@ -1,33 +1,39 @@
 """Tests unitaires — codex_worker.py (sans appel Codex réel)."""
-import pytest
+
 from unittest.mock import patch, MagicMock
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class TestCountErrors:
     def test_zero_erreurs(self):
         from orchestrator.workers.codex_worker import _count_errors
+
         assert _count_errors("", "", "") == 0
 
     def test_erreurs_ruff(self):
         from orchestrator.workers.codex_worker import _count_errors
+
         ruff = "src/test.py:1:1: F401 unused\nsrc/test.py:2:1: E501 too long"
         assert _count_errors(ruff, "", "") == 2
 
     def test_erreurs_mypy(self):
         from orchestrator.workers.codex_worker import _count_errors
+
         mypy = "src/test.py:5: error: Incompatible types\nsrc/test.py:10: error: Missing type"
         assert _count_errors("", mypy, "") == 2
 
     def test_erreurs_pytest(self):
         from orchestrator.workers.codex_worker import _count_errors
+
         test = "3 failed, 10 passed"
         assert _count_errors("", "", test) == 3
 
     def test_combinaison(self):
         from orchestrator.workers.codex_worker import _count_errors
+
         ruff = "src/test.py:1:1: F401 unused"
         mypy = "src/test.py:5: error: Missing type"
         test = "2 failed, 5 passed"
@@ -37,6 +43,7 @@ class TestCountErrors:
 class TestRtk:
     def test_passthrough_si_rtk_absent(self):
         from orchestrator.workers.codex_worker import _rtk
+
         text = "texte de test"
         # RTK probablement absent — doit retourner le texte tel quel
         result = _rtk(text)
@@ -44,6 +51,7 @@ class TestRtk:
 
     def test_texte_vide(self):
         from orchestrator.workers.codex_worker import _rtk
+
         assert _rtk("") == ""
 
 
@@ -55,8 +63,7 @@ class TestImplementTask:
 
         mock_codex.return_value = (0, "code généré", "")
         mock_subprocess.return_value = MagicMock(
-            stdout="diff --git a/src/test.py",
-            returncode=0
+            stdout="diff --git a/src/test.py", returncode=0
         )
 
         handoff = {

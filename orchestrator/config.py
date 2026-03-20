@@ -1,13 +1,18 @@
 from __future__ import annotations
+
+import asyncio as _asyncio
 from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8",
-        case_sensitive=False, extra="ignore",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
     )
     anthropic_api_key: str = ""
     openai_api_key: str = ""
@@ -29,6 +34,7 @@ class Settings(BaseSettings):
     @property
     def rtk_available(self) -> bool:
         import shutil
+
         return self.rtk_enabled and shutil.which("rtk") is not None
 
     def ensure_dirs(self) -> None:
@@ -38,6 +44,7 @@ class Settings(BaseSettings):
 
 _settings: Settings | None = None
 
+
 def get_settings() -> Settings:
     global _settings
     if _settings is None:
@@ -46,10 +53,8 @@ def get_settings() -> Settings:
     return _settings
 
 
-# ─── File d'attente multi-utilisateurs ───────────────────────────────────────
-import asyncio as _asyncio
-
 _run_semaphore: _asyncio.Semaphore | None = None
+
 
 def get_run_semaphore() -> _asyncio.Semaphore:
     """Semaphore global — 1 run actif à la fois."""
