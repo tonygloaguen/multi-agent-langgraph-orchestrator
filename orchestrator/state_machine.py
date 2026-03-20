@@ -140,7 +140,8 @@ class OrchestratorState(TypedDict, total=False):
     escalated: bool
     completed_tasks: list[str]
     errors: list[str]
-    status: str  # running | completed | failed
+    status: str           # running | completed | failed
+    pipeline_status: str  # success | failed | degraded | fallback
 
 
 # ─── Nœuds du graphe ─────────────────────────────────────────────────────────
@@ -186,6 +187,7 @@ def node_init(state: OrchestratorState) -> dict:
         "completed_tasks": [],
         "errors": [],
         "status": "running",
+        "pipeline_status": "running",
     }
 
 
@@ -256,39 +258,147 @@ def node_snapshot(state: OrchestratorState) -> dict:
 
 
 def node_plan(state: OrchestratorState) -> dict:
-    from orchestrator.workers import claude_worker
+    from orchestrator.workers import claude_worker, gemini_worker
+    from orchestrator.workers.llm_provider import LLMInvocationError, ProviderStatus
 
-    console.print("\n[cyan]Claude — planification...[/cyan]")
+    run_id = state["run_id"]
+    log_dir = Path(state["log_dir"])
+    goal = state.get("goal", "")
     snapshot = state.get("last_analysis", {}).get("snapshot", "")
 
+    console.print("\n[cyan]Claude — planification...[/cyan]")
+    _log_event(run_id, "planning_started", {"provider": "claude"}, log_dir)
+
+    # ── Tentative principale : Claude ─────────────────────────────────────────
+    plan: dict | None = None
+    used_provider = "claude"
+
     try:
-        plan = claude_worker.generate_plan(state.get("goal", ""), snapshot)
-        tasks = plan["tasks"]
-        console.print(f"[green]Plan : {len(tasks)} tâche(s)[/green]")
+        plan = claude_worker.generate_plan(goal, snapshot)
+
+    except LLMInvocationError as exc:
+        result = exc.result
+        # Log structuré du rate limit
+        event_data: dict = {
+            "provider": "claude",
+            "rc": result.rc,
+            "status": result.status.value,
+            "error_reason": result.error_reason,
+            "raw_output_excerpt": result.raw_excerpt,
+        }
+        if result.reset_time:
+            event_data["reset_time_utc"] = result.reset_time
+
+        if result.status == ProviderStatus.RATE_LIMITED:
+            console.print(
+                f"[yellow]Claude rate-limited"
+                f"{f' — reset {result.reset_time}' if result.reset_time else ''}."
+                f" Fallback Gemini...[/yellow]"
+            )
+            _log_event(run_id, "provider_rate_limited", event_data, log_dir)
+        else:
+            console.print(f"[yellow]Claude indisponible ({result.status.value}). Fallback Gemini...[/yellow]")
+            _log_event(run_id, "provider_failed", event_data, log_dir)
+
         _log_event(
-            state["run_id"],
-            "plan_generated",
+            run_id,
+            "fallback_started",
+            {"from_provider": "claude", "to_provider": "gemini", "reason": result.status.value},
+            log_dir,
+        )
+
+        # ── Fallback : Gemini ─────────────────────────────────────────────────
+        try:
+            plan = gemini_worker.generate_plan(goal, snapshot)
+            used_provider = "gemini"
+            console.print("[green]Gemini — plan généré (fallback)[/green]")
+            _log_event(
+                run_id,
+                "fallback_succeeded",
+                {"provider": "gemini", "task_count": len(plan.get("tasks", []))},
+                log_dir,
+            )
+        except Exception as fallback_err:
+            console.print(f"[red]Gemini fallback échoué : {fallback_err}[/red]")
+            _log_event(
+                run_id,
+                "provider_failed",
+                {"provider": "gemini", "error": str(fallback_err)[:300]},
+                log_dir,
+            )
+            _log_event(
+                run_id,
+                "pipeline_failed",
+                {"reason": "Aucun provider disponible pour la planification"},
+                log_dir,
+            )
+            return {
+                "errors": [str(exc), str(fallback_err)],
+                "status": "failed",
+                "pipeline_status": "failed",
+            }
+
+    except Exception as exc:
+        console.print(f"[red]Erreur planification : {exc}[/red]")
+        _log_event(
+            run_id,
+            "planning_failed",
             {
-                "plan_id": plan["plan_id"],
-                "task_count": len(tasks),
+                "provider": "claude",
+                "error": str(exc)[:500],
             },
-            Path(state["log_dir"]),
+            log_dir,
+        )
+        _log_event(
+            run_id,
+            "pipeline_failed",
+            {"reason": str(exc)[:300]},
+            log_dir,
         )
         return {
-            "plan_id": plan["plan_id"],
-            "tasks": tasks,
-            "task_index": 0,
-            "last_analysis": {},
+            "errors": [str(exc)],
+            "status": "failed",
+            "pipeline_status": "failed",
         }
-    except Exception as e:
-        console.print(f"[red]Erreur planification : {e}[/red]")
+
+    # ── Plan obtenu (Claude ou Gemini) ────────────────────────────────────────
+    tasks = plan["tasks"]
+    console.print(f"[green]Plan ({used_provider}) : {len(tasks)} tâche(s)[/green]")
+
+    pipeline_status = "fallback" if used_provider != "claude" else "running"
+
+    _log_event(
+        run_id,
+        "plan_generated",
+        {
+            "plan_id": plan["plan_id"],
+            "task_count": len(tasks),
+            "provider": used_provider,
+        },
+        log_dir,
+    )
+
+    if not tasks:
+        console.print("[yellow]Aucune tâche générée.[/yellow]")
         _log_event(
-            state["run_id"],
-            "planning_failed",
-            {"error": str(e)},
-            Path(state["log_dir"]),
+            run_id,
+            "pipeline_failed",
+            {"reason": "Plan vide — aucune tâche générée", "provider": used_provider},
+            log_dir,
         )
-        return {"errors": [str(e)], "status": "failed"}
+        return {
+            "errors": ["Plan vide"],
+            "status": "failed",
+            "pipeline_status": "failed",
+        }
+
+    return {
+        "plan_id": plan["plan_id"],
+        "tasks": tasks,
+        "task_index": 0,
+        "last_analysis": {},
+        "pipeline_status": pipeline_status,
+    }
 
 
 def node_prepare_task(state: OrchestratorState) -> dict:
@@ -535,27 +645,74 @@ def node_commit(state: OrchestratorState) -> dict:
 
 
 def node_done(state: OrchestratorState) -> dict:
-    console.print(
-        Panel(
-            f"[bold green]Pipeline terminé[/bold green]\n"
-            f"Run ID  : {state['run_id']}\n"
-            f"Tâches  : {len(state.get('completed_tasks', []))}/{len(state.get('tasks', []))}\n"
-            f"Journal : {state['log_dir']}/{state['run_id']}.jsonl",
-            title="Done",
-        )
-    )
+    run_id = state["run_id"]
+    log_dir = Path(state["log_dir"])
     completed = len(state.get("completed_tasks", []))
     total = len(state.get("tasks", []))
+    errors = state.get("errors", [])
+    current_status = state.get("status", "running")
+    pipeline_status = state.get("pipeline_status", "running")
+
+    # Déterminer le vrai statut final
+    is_failed = current_status == "failed" or (total > 0 and completed == 0 and errors)
+    is_degraded = pipeline_status in ("fallback", "degraded")
+
+    if is_failed:
+        reason = errors[0][:200] if errors else "Erreur inconnue"
+        panel_body = (
+            f"[bold red]Pipeline échoué[/bold red]\n"
+            f"Run ID  : {run_id}\n"
+            f"Tâches  : {completed}/{total}\n"
+            f"Raison  : {reason}\n"
+            f"Journal : {state['log_dir']}/{run_id}.jsonl"
+        )
+        console.print(Panel(panel_body, title="[red]Échec[/red]"))
+        _log_event(
+            run_id,
+            "pipeline_failed",
+            {"completed": completed, "total": total, "reason": reason},
+            log_dir,
+        )
+        return {
+            "status": "failed",
+            "pipeline_status": "failed",
+            "completed_tasks": state.get("completed_tasks", []),
+        }
+
+    if is_degraded:
+        panel_body = (
+            f"[bold yellow]Pipeline terminé (mode dégradé)[/bold yellow]\n"
+            f"Run ID  : {run_id}\n"
+            f"Tâches  : {completed}/{total}\n"
+            f"Statut  : {pipeline_status}\n"
+            f"Journal : {state['log_dir']}/{run_id}.jsonl"
+        )
+        console.print(Panel(panel_body, title="[yellow]Dégradé[/yellow]"))
+    else:
+        panel_body = (
+            f"[bold green]Pipeline terminé[/bold green]\n"
+            f"Run ID  : {run_id}\n"
+            f"Tâches  : {completed}/{total}\n"
+            f"Journal : {state['log_dir']}/{run_id}.jsonl"
+        )
+        console.print(Panel(panel_body, title="Done"))
+
+    final_pipeline_status = "success" if not is_degraded else pipeline_status
     _log_event(
-        state["run_id"],
+        run_id,
         "pipeline_completed",
         {
             "completed": completed,
             "total": total,
+            "pipeline_status": final_pipeline_status,
         },
-        Path(state["log_dir"]),
+        log_dir,
     )
-    return {"status": "completed", "completed_tasks": state.get("completed_tasks", [])}
+    return {
+        "status": "completed",
+        "pipeline_status": final_pipeline_status,
+        "completed_tasks": state.get("completed_tasks", []),
+    }
 
 
 # ─── Routeurs conditionnels ───────────────────────────────────────────────────
