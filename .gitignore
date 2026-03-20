@@ -9,3 +9,4 @@ orchestrator/handoffs/*.yaml
 orchestrator/state/runs/
 logs/*.log
 node_modules/
+.orchestrator_signing_key
