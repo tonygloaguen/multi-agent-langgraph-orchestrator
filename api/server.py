@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -226,12 +227,12 @@ async def _run_pipeline_async(goal: str, repo_path: str, run_id: str) -> None:
             cwd=str(PROJECT_ROOT),
         )
 
+        if proc.stdout is None:
+            raise RuntimeError("Le flux stdout du subprocess est indisponible")
+
         async for line in proc.stdout:
             text = line.decode("utf-8", errors="replace").rstrip()
             if text:
-                # Nettoyer les codes ANSI
-                import re
-
                 clean = re.sub(r"\x1b\[[0-9;]*m", "", text)
                 await _push_log({"type": "log", "message": clean})
 
@@ -247,7 +248,6 @@ async def _run_pipeline_async(goal: str, repo_path: str, run_id: str) -> None:
 
     await _push_log({"type": "done", "status": status})
 
-    # Archiver dans l'historique
     if _active_run:
         _run_history.insert(0, {**_active_run})
 

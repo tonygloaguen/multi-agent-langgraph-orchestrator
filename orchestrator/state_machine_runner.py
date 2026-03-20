@@ -10,8 +10,12 @@ import argparse
 import sys
 from pathlib import Path
 
-# Forcer stdout unbuffered pour le streaming
-sys.stdout.reconfigure(line_buffering=True)
+# Forcer stdout/stderr unbuffered pour le streaming si disponible
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(line_buffering=True)
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
