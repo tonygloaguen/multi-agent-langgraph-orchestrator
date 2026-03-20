@@ -1,0 +1,18 @@
+acceptance_criteria:
+- pytest -q retourne exit code 0 avec 0 failed, 0 error
+- Aucun test skippé sans raison documentée dans le fichier concerné
+files_allowed:
+- tests/unit/test_api.py
+- tests/unit/test_integrity.py
+- tests/unit/test_nodes.py
+- tests/integration/test_pipeline.py
+paths_forbidden:
+- migrations/
+- .github/workflows/
+- infra/
+- .env
+plan_id: plan-20260320-001
+task_id: task-003
+task_objective: S'assurer que tous les tests unitaires et d'intégration passent sans
+  échec ni warning
+task_title: Suite de tests verte

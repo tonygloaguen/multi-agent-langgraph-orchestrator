@@ -1,0 +1,25 @@
+acceptance_criteria:
+- mypy src/ --ignore-missing-imports retourne exit code 0 sans erreur de type
+files_allowed:
+- src/api/main.py
+- src/api/routes/analysis.py
+- src/api/schemas.py
+- src/collectors/integrity.py
+- src/collectors/log_collector.py
+- src/collectors/pg_writer.py
+- src/langgraph_pipeline/conditions.py
+- src/langgraph_pipeline/graph.py
+- src/langgraph_pipeline/llm_client.py
+- src/langgraph_pipeline/nodes.py
+- src/langgraph_pipeline/state.py
+- src/models/log_entry.py
+- src/models/report.py
+paths_forbidden:
+- migrations/
+- .github/workflows/
+- infra/
+- .env
+plan_id: plan-20260320-001
+task_id: task-002
+task_objective: Corriger toutes les erreurs mypy en mode strict sur les modules src/
+task_title: Typage statique mypy

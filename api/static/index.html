@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orchestrateur Multi-Agents</title>
+<style>
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --border:   #30363d;
+    --text:     #e6edf3;
+    --muted:    #8b949e;
+    --blue:     #2f81f7;
+    --green:    #3fb950;
+    --yellow:   #d29922;
+    --red:      #f85149;
+    --cyan:     #76e3ea;
+    --radius:   8px;
+    --mono:     'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header .badge {
+    background: var(--blue);
+    color: #fff;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    margin-left: auto;
+    transition: background 0.3s;
+  }
+  .status-dot.running  { background: var(--green); animation: pulse 1s infinite; }
+  .status-dot.failed   { background: var(--red); }
+  .status-dot.completed { background: var(--cyan); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    background: var(--surface);
+  }
+  .tab {
+    padding: 10px 16px;
+    cursor: pointer;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    font-size: 13px;
+    transition: all 0.2s;
+  }
+  .tab:hover  { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--blue); }
+
+  /* ── Contenu ── */
+  .content { padding: 24px; max-width: 960px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ── Formulaire lancement ── */
+  .form-group { margin-bottom: 16px; }
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  input, textarea {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus, textarea:focus { border-color: var(--blue); }
+  textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+
+  .btn {
+    padding: 10px 20px;
+    border-radius: var(--radius);
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: opacity 0.2s;
+  }
+  .btn:hover    { opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary  { background: var(--blue);  color: #fff; }
+  .btn-danger   { background: var(--red);   color: #fff; }
+  .btn-ghost    { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+  .btn-row { display: flex; gap: 8px; align-items: center; margin-top: 20px; }
+
+  /* ── Barre de progression ── */
+  .progress-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 20px;
+    display: none;
+  }
+  .progress-section.visible { display: block; }
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .progress-title { font-weight: 600; font-size: 13px; }
+  .progress-count { color: var(--muted); font-size: 12px; }
+  .progress-bar-bg {
+    background: var(--border);
+    border-radius: 4px;
+    height: 6px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    background: var(--blue);
+    border-radius: 4px;
+    transition: width 0.5s ease;
+    width: 0%;
+  }
+
+  /* ── Terminal logs ── */
+  .terminal {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    height: 420px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .log-info    { color: var(--text); }
+  .log-success { color: var(--green); }
+  .log-warn    { color: var(--yellow); }
+  .log-error   { color: var(--red); }
+  .log-cyan    { color: var(--cyan); }
+  .log-muted   { color: var(--muted); }
+
+  /* ── Historique ── */
+  .run-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .run-card .run-id   { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .run-card .run-goal { font-weight: 500; font-size: 13px; flex: 1; }
+  .run-card .run-repo { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .tag-completed { background: #1a3a2a; color: var(--green); }
+  .tag-failed    { background: #3a1a1a; color: var(--red); }
+  .tag-running   { background: #1a2a3a; color: var(--blue); }
+
+  /* ── Empty state ── */
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 48px 0;
+    font-size: 13px;
+  }
+  .empty svg { margin-bottom: 12px; opacity: 0.4; }
+
+  /* ── Infos système ── */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .info-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .info-card .info-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .info-card .info-value { font-size: 14px; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2">
+    <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+  </svg>
+  <h1>Orchestrateur Multi-Agents</h1>
+  <span class="badge">LangGraph</span>
+  <span id="statusDot" class="status-dot" title="Inactif"></span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('run')">Lancer</div>
+  <div class="tab" onclick="switchTab('monitor')">Suivi</div>
+  <div class="tab" onclick="switchTab('history')">Historique</div>
+</div>
+
+<div class="content">
+
+  <!-- ── ONGLET LANCER ── -->
+  <div id="panel-run" class="panel active">
+    <div class="form-group">
+      <label>Objectif</label>
+      <textarea id="goalInput" placeholder="Ex: Ajouter des type hints manquants dans src/models&#10;Ex: Corriger les imports inutilisés dans les fichiers de test&#10;Ex: Ajouter des docstrings manquantes dans les fonctions publiques"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Repo cible</label>
+      <input id="repoInput" type="text" placeholder="/home/gloaguen/projets/mon-repo" value="/home/gloaguen/log-analyzer-anssi">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnStart" onclick="startRun()">▶ Lancer</button>
+      <button class="btn btn-danger"  id="btnStop"  onclick="stopRun()" disabled>■ Arrêter</button>
+      <span id="runStatus" style="color: var(--muted); font-size: 12px;"></span>
+    </div>
+  </div>
+
+  <!-- ── ONGLET SUIVI ── -->
+  <div id="panel-monitor" class="panel">
+    <div class="progress-section" id="progressSection">
+      <div class="progress-header">
+        <span class="progress-title" id="progressTitle">En cours...</span>
+        <span class="progress-count" id="progressCount">0/0</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <span style="font-size:12px; color:var(--muted);">Logs temps réel</span>
+      <button class="btn btn-ghost" style="font-size:11px; padding:4px 10px;" onclick="clearLogs()">Effacer</button>
+    </div>
+    <div class="terminal" id="terminal">En attente d'un run...</div>
+  </div>
+
+  <!-- ── ONGLET HISTORIQUE ── -->
+  <div id="panel-history" class="panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <span style="font-size:13px; color:var(--muted);">Derniers runs</span>
+      <button class="btn btn-ghost" style="font-size:11px; padding:4px 10px;" onclick="loadHistory()">↻ Actualiser</button>
+    </div>
+    <div id="historyList">
+      <div class="empty">Chargement...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── État ─────────────────────────────────────────────────────────────────
+let activeRunId   = null;
+let sseSource     = null;
+let taskTotal     = 0;
+let taskCompleted = 0;
+
+// ─── Navigation ───────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', ['run','monitor','history'][i] === name);
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`panel-${name}`).classList.add('active');
+  if (name === 'history') loadHistory();
+  if (name === 'monitor') scrollTerminal();
+}
+
+// ─── Lancer un run ────────────────────────────────────────────────────────
+async function startRun() {
+  const goal     = document.getElementById('goalInput').value.trim();
+  const repoPath = document.getElementById('repoInput').value.trim();
+
+  if (!goal) { alert('Objectif requis'); return; }
+
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('btnStop').disabled  = false;
+  document.getElementById('runStatus').textContent = 'Démarrage...';
+
+  // Réinitialiser le terminal
+  clearLogs();
+  taskTotal = 0; taskCompleted = 0;
+  updateProgress(0, 0);
+
+  try {
+    const res  = await fetch('/api/run', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ goal, repo_path: repoPath }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      appendLog(`❌ ${data.error}`, 'log-error');
+      resetButtons();
+      return;
+    }
+
+    activeRunId = data.run_id;
+    document.getElementById('runStatus').textContent = `Run ID: ${data.run_id}`;
+    setStatusDot('running');
+
+    // Basculer vers le suivi
+    switchTab('monitor');
+    startSSE();
+
+  } catch (e) {
+    appendLog(`❌ Erreur réseau : ${e}`, 'log-error');
+    resetButtons();
+  }
+}
+
+// ─── SSE ──────────────────────────────────────────────────────────────────
+function startSSE() {
+  if (sseSource) sseSource.close();
+
+  sseSource = new EventSource('/api/run/logs');
+
+  sseSource.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'heartbeat') return;
+
+    const msg = data.message || '';
+
+    // Détecter le type de log pour la couleur
+    let cls = 'log-info';
+    if (msg.includes('PASS') || msg.includes('✓') || msg.includes('Commit') || msg.includes('terminée'))
+      cls = 'log-success';
+    else if (msg.includes('FAIL') || msg.includes('erreur') || msg.includes('Erreur') || msg.includes('❌'))
+      cls = 'log-error';
+    else if (msg.includes('Repair') || msg.includes('WARNING') || msg.includes('Analyse') || msg.includes('Cause'))
+      cls = 'log-warn';
+    else if (msg.includes('Claude') || msg.includes('Codex') || msg.includes('Preflight') || msg.includes('Scan'))
+      cls = 'log-cyan';
+    else if (msg.includes('heartbeat') || msg.includes('Run ID') || msg.includes('run-'))
+      cls = 'log-muted';
+
+    // Détecter le nombre de tâches
+    const planMatch = msg.match(/Plan : (\d+) tâche/);
+    if (planMatch) { taskTotal = parseInt(planMatch[1]); }
+
+    // Détecter le début d'une tâche : "── Tâche 2/3"
+    const taskMatch = msg.match(/Tâche (\d+)\/(\d+)/);
+    if (taskMatch) {
+      taskTotal = parseInt(taskMatch[2]);
+      updateProgress(taskCompleted, taskTotal);
+    }
+
+    // Détecter la fin d'une tâche : "Tâche task-001 terminée."
+    if (msg.includes('terminée') && msg.includes('task-')) {
+      taskCompleted++;
+      updateProgress(taskCompleted, taskTotal);
+    }
+
+    if (data.type === 'done') {
+      const success = data.status === 'completed';
+      appendLog(success ? '✅ Pipeline terminé' : '❌ Pipeline échoué', success ? 'log-success' : 'log-error');
+      setStatusDot(data.status);
+      resetButtons();
+      sseSource.close();
+      return;
+    }
+
+    if (msg) appendLog(msg, cls);
+  };
+
+  sseSource.onerror = () => {
+    sseSource.close();
+  };
+}
+
+// ─── Arrêter un run ───────────────────────────────────────────────────────
+async function stopRun() {
+  await fetch('/api/run/stop', { method: 'POST' });
+  appendLog('⏹ Run arrêté manuellement', 'log-warn');
+  setStatusDot('idle');
+  resetButtons();
+  if (sseSource) sseSource.close();
+}
+
+// ─── Historique ───────────────────────────────────────────────────────────
+async function loadHistory() {
+  const container = document.getElementById('historyList');
+  container.innerHTML = '<div class="empty">Chargement...</div>';
+
+  try {
+    const res  = await fetch('/api/run/history');
+    const data = await res.json();
+    const runs = data.runs || [];
+
+    if (!runs.length) {
+      container.innerHTML = `
+        <div class="empty">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M9 12h6M9 16h6M7 3H4a1 1 0 00-1 1v16a1 1 0 001 1h16a1 1 0 001-1V8l-5-5z"/>
+            <path d="M14 3v5h5"/>
+          </svg>
+          <div>Aucun run dans l'historique</div>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = runs.map(run => {
+      const tagClass = run.status === 'completed' ? 'tag-completed' :
+                       run.status === 'failed'    ? 'tag-failed'    : 'tag-running';
+      const tagLabel = run.status === 'completed' ? '✓ Terminé' :
+                       run.status === 'failed'    ? '✗ Échoué'  : '⟳ En cours';
+      const date = run.started_at
+        ? new Date(run.started_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+        : '';
+      const progress = run.tasks_total
+        ? `${run.tasks_completed}/${run.tasks_total} tâches`
+        : '';
+
+      return `
+        <div class="run-card">
+          <div style="flex:1; min-width:0;">
+            <div class="run-goal">${run.goal || '(sans objectif)'}</div>
+            <div style="display:flex; gap:12px; margin-top:4px;">
+              <span class="run-id">${run.run_id}</span>
+              ${run.repo_path ? `<span class="run-repo">${run.repo_path.split('/').pop()}</span>` : ''}
+              ${date ? `<span class="run-id">${date}</span>` : ''}
+              ${progress ? `<span class="run-id">${progress}</span>` : ''}
+            </div>
+          </div>
+          <span class="tag ${tagClass}">${tagLabel}</span>
+        </div>`;
+    }).join('');
+
+  } catch (e) {
+    container.innerHTML = `<div class="empty">Erreur de chargement</div>`;
+  }
+}
+
+// ─── Utilitaires UI ───────────────────────────────────────────────────────
+function appendLog(msg, cls = 'log-info') {
+  const terminal = document.getElementById('terminal');
+  if (terminal.textContent === 'En attente d\'un run...') {
+    terminal.textContent = '';
+  }
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = msg;
+  terminal.appendChild(line);
+  scrollTerminal();
+}
+
+function clearLogs() {
+  document.getElementById('terminal').innerHTML = '';
+}
+
+function scrollTerminal() {
+  const t = document.getElementById('terminal');
+  t.scrollTop = t.scrollHeight;
+}
+
+function updateProgress(completed, total) {
+  const section = document.getElementById('progressSection');
+  const bar     = document.getElementById('progressBar');
+  const count   = document.getElementById('progressCount');
+  const title   = document.getElementById('progressTitle');
+
+  if (total > 0) {
+    section.classList.add('visible');
+    const pct = Math.round((completed / total) * 100);
+    bar.style.width   = `${pct}%`;
+    count.textContent = `${completed}/${total}`;
+    title.textContent = completed < total ? `Tâche ${completed + 1}/${total} en cours...` : 'Terminé';
+  } else {
+    section.classList.remove('visible');
+  }
+}
+
+function setStatusDot(status) {
+  const dot = document.getElementById('statusDot');
+  dot.className = `status-dot ${status === 'running' ? 'running' : status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : ''}`;
+  dot.title = status;
+}
+
+function resetButtons() {
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled  = true;
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  // Vérifier si un run est déjà actif
+  fetch('/api/run/status').then(r => r.json()).then(data => {
+    if (data.status === 'running') {
+      setStatusDot('running');
+      document.getElementById('btnStart').disabled = true;
+      document.getElementById('btnStop').disabled  = false;
+      document.getElementById('runStatus').textContent = `Run actif : ${data.run_id}`;
+      switchTab('monitor');
+      startSSE();
+    }
+  });
+});
+</script>
+</body>
+</html>

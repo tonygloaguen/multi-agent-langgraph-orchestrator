@@ -1,0 +1,88 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Orchestrator Auto-Start",
+      "type": "shell",
+      "command": "bash scripts/start_orchestrator.sh",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": { "PYTHONPATH": "${workspaceFolder}" }
+      },
+      "runOptions": { "runOn": "folderOpen" },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "echo": true,
+        "focus": false,
+        "close": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Orchestrator (avec goal)",
+      "type": "shell",
+      "command": "source .venv/bin/activate && python orchestrator/state_machine.py --goal \"${input:orchestratorGoal}\" --repo \"${input:repoPath}\"",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}",
+          "PATH": "${workspaceFolder}/.venv/bin:/home/gloaguen/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Bootstrap (install tout)",
+      "type": "shell",
+      "command": "bash scripts/bootstrap.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate Task",
+      "type": "shell",
+      "command": "source .venv/bin/activate && bash scripts/validate_task.sh .",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Logs (tail)",
+      "type": "shell",
+      "command": "tail -f logs/orchestrator.log 2>/dev/null || echo 'Pas encore de logs'",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Stop Orchestrator",
+      "type": "shell",
+      "command": "pkill -f state_machine.py || echo 'Non actif'",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "orchestratorGoal",
+      "type": "promptString",
+      "description": "Objectif pour l'orchestrateur",
+      "default": "Analyser le repo et proposer des améliorations"
+    },
+    {
+      "id": "repoPath",
+      "type": "promptString",
+      "description": "Chemin absolu du repo cible",
+      "default": "/home/gloaguen/log-analyzer-anssi"
+    }
+  ]
+}
