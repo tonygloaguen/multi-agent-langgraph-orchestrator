@@ -3,6 +3,7 @@ orchestrator/workers/claude_worker.py
 Worker planification/review via Claude Code CLI (subprocess).
 Utilise le plan Pro + crédits API Anthropic.
 """
+
 from __future__ import annotations
 
 import json
@@ -17,6 +18,7 @@ TIMEOUT = 120
 def _call_claude(prompt: str) -> str:
     """Appelle Claude Code CLI en mode non-interactif."""
     import subprocess
+
     try:
         result = subprocess.run(
             [CLAUDE_BIN, "--print", "--output-format", "text"],
@@ -58,23 +60,23 @@ def _extract_json(raw: str) -> dict:
         return json.loads(raw)
     except json.JSONDecodeError:
         pass
-    match = re.search(r'\{[^{}]*\}', raw, re.DOTALL)
+    match = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
     if match:
         try:
             return json.loads(match.group())
         except json.JSONDecodeError:
             pass
-    start = raw.find('{')
+    start = raw.find("{")
     if start != -1:
         depth = 0
         for i, ch in enumerate(raw[start:], start):
-            if ch == '{':
+            if ch == "{":
                 depth += 1
-            elif ch == '}':
+            elif ch == "}":
                 depth -= 1
                 if depth == 0:
                     try:
-                        return json.loads(raw[start:i+1])
+                        return json.loads(raw[start : i + 1])
                     except json.JSONDecodeError:
                         break
     raise ValueError(f"Aucun JSON valide trouvé dans : {raw[:300]}")
@@ -125,7 +127,7 @@ Règles : max 3 tâches, atomiques, fichiers existants dans le repo. YAML unique
     return {
         "plan_id": data.get("plan_id", f"plan-{today}-001"),
         "plan_yaml": raw,
-        "tasks":    data.get("tasks", []),
+        "tasks": data.get("tasks", []),
     }
 
 
@@ -155,19 +157,18 @@ Réponds exactement ainsi (JSON pur) :
     except (ValueError, json.JSONDecodeError):
         raw_lower = raw.lower()
         passed = "passed" in raw_lower and (
-            '"passed": true' in raw_lower or
-            "'passed': true" in raw_lower or
-            "passed: true" in raw_lower
+            '"passed": true' in raw_lower
+            or "'passed': true" in raw_lower
+            or "passed: true" in raw_lower
         )
         return {
             "passed": passed,
             "issues": [],
-            "notes":  raw[:200],
+            "notes": raw[:200],
         }
 
 
 def analyze_failure(  # patched
-
     ruff_out: str,
     mypy_out: str,
     test_out: str,
@@ -211,7 +212,10 @@ Réponds en JSON sur une seule ligne :
         result.setdefault("files_to_fix", files_allowed)
         result.setdefault("escalate", False)
         # Ne pas escalader pour CWD/fichiers introuvables
-        if result.get("escalate") and any(x in result.get("root_cause","").lower() for x in ["introuvable", "not found", "existe pas"]):
+        if result.get("escalate") and any(
+            x in result.get("root_cause", "").lower()
+            for x in ["introuvable", "not found", "existe pas"]
+        ):
             result["escalate"] = False
         return result
     except Exception:

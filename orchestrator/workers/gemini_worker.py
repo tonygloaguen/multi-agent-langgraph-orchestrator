@@ -13,6 +13,7 @@ def summarize_logs(logs: str) -> str:
         return "Gemini non configuré (GEMINI_API_KEY manquante)"
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
+
         llm = ChatGoogleGenerativeAI(
             model=cfg.gemini_model,
             google_api_key=cfg.gemini_api_key,

@@ -2,6 +2,7 @@
 orchestrator/workers/codex_worker.py
 Worker Codex CLI : implémentation et repair ciblé par fichier.
 """
+
 from __future__ import annotations
 
 import os
@@ -20,8 +21,7 @@ def _rtk(text: str) -> str:
         return text
     try:
         r = subprocess.run(
-            ["rtk", "compress"], input=text,
-            capture_output=True, text=True, timeout=15
+            ["rtk", "compress"], input=text, capture_output=True, text=True, timeout=15
         )
         return r.stdout if r.returncode == 0 and r.stdout else text
     except Exception:
@@ -51,9 +51,9 @@ def _count_errors(ruff_out: str, mypy_out: str, test_out: str) -> int:
     """Compte le nombre total d'erreurs pour détecter les régressions."""
     count = 0
     # Ruff : une erreur par ligne non vide
-    count += sum(1 for l in ruff_out.strip().splitlines() if l.strip())
+    count += sum(1 for line in ruff_out.strip().splitlines() if line.strip())
     # Mypy : lignes contenant "error:"
-    count += sum(1 for l in mypy_out.splitlines() if "error:" in l)
+    count += sum(1 for line in mypy_out.splitlines() if "error:" in line)
     # Pytest : extraire le nombre d'échecs
     for line in test_out.splitlines():
         if "failed" in line:
@@ -88,15 +88,14 @@ RÈGLES ABSOLUES :
     rc, stdout, stderr = _run_codex(prompt, repo_path)
 
     diff = subprocess.run(
-        ["git", "diff"], cwd=repo_path,
-        capture_output=True, text=True
+        ["git", "diff"], cwd=repo_path, capture_output=True, text=True
     ).stdout
 
     return {
         "success": rc == 0,
-        "diff":    diff,
-        "stdout":  stdout[:500],
-        "error":   stderr[:300] if rc != 0 else "",
+        "diff": diff,
+        "stdout": stdout[:500],
+        "error": stderr[:300] if rc != 0 else "",
     }
 
 
@@ -121,8 +120,7 @@ def repair_task(
 
     # Récupérer le diff actuel
     diff = subprocess.run(
-        ["git", "diff"], cwd=repo_path,
-        capture_output=True, text=True
+        ["git", "diff"], cwd=repo_path, capture_output=True, text=True
     ).stdout
 
     # Construire le prompt repair selon qu'on a une analyse ou non
@@ -180,23 +178,35 @@ Ne pas modifier le comportement fonctionnel. Ne pas dépasser le scope.
     rc, _, stderr = _run_codex(prompt, repo_path)
 
     # Vérifier si le repair a empiré la situation (régression)
-    rc_r, new_ruff, _ = subprocess.run(
+    subprocess.run(
         "ruff check . --output-format=concise",
-        shell=True, cwd=repo_path, capture_output=True, text=True
-    ).returncode, *["", ""]
+        shell=True,
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
 
     # Recalculer les erreurs après repair
     new_ruff_out = subprocess.run(
         "ruff check . --output-format=concise",
-        shell=True, cwd=repo_path, capture_output=True, text=True
+        shell=True,
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
     ).stdout
     new_mypy_out = subprocess.run(
         "mypy . --ignore-missing-imports",
-        shell=True, cwd=repo_path, capture_output=True, text=True
+        shell=True,
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
     ).stdout
     new_test_out = subprocess.run(
         "pytest -q --tb=short 2>&1 | tail -10",
-        shell=True, cwd=repo_path, capture_output=True, text=True
+        shell=True,
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
     ).stdout
 
     errors_after = _count_errors(new_ruff_out, new_mypy_out, new_test_out)
@@ -210,15 +220,14 @@ Ne pas modifier le comportement fonctionnel. Ne pas dépasser le scope.
             subprocess.run(reset_cmd, shell=True, cwd=repo_path)
 
     diff2 = subprocess.run(
-        ["git", "diff"], cwd=repo_path,
-        capture_output=True, text=True
+        ["git", "diff"], cwd=repo_path, capture_output=True, text=True
     ).stdout
 
     return {
-        "success":       rc == 0 and not regressed,
-        "diff":          diff2,
-        "error":         stderr[:300] if rc != 0 else "",
-        "regressed":     regressed,
+        "success": rc == 0 and not regressed,
+        "diff": diff2,
+        "error": stderr[:300] if rc != 0 else "",
+        "regressed": regressed,
         "errors_before": errors_before,
-        "errors_after":  errors_after,
+        "errors_after": errors_after,
     }

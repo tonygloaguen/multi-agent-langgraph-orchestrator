@@ -1,17 +1,18 @@
 """Tests unitaires — journalisation HMAC NIS2."""
+
 import json
 import hmac
-import hashlib
 import tempfile
-import pytest
 from pathlib import Path
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class TestSignEntry:
     def test_signature_reproductible(self):
-        from orchestrator.state_machine import _sign_entry, _get_signing_key
+        from orchestrator.state_machine import _sign_entry
+
         entry = {"event": "test", "run_id": "run-001", "ts": "2026-01-01"}
         sig1 = _sign_entry(entry)
         sig2 = _sign_entry(entry)
@@ -19,21 +20,24 @@ class TestSignEntry:
 
     def test_signature_differente_si_contenu_different(self):
         from orchestrator.state_machine import _sign_entry
+
         entry1 = {"event": "test1", "run_id": "run-001"}
         entry2 = {"event": "test2", "run_id": "run-001"}
         assert _sign_entry(entry1) != _sign_entry(entry2)
 
     def test_signature_est_hex(self):
         from orchestrator.state_machine import _sign_entry
+
         entry = {"event": "test", "run_id": "run-001"}
         sig = _sign_entry(entry)
         assert len(sig) == 64  # SHA256 = 64 hex chars
-        int(sig, 16)           # Doit être un hex valide
+        int(sig, 16)  # Doit être un hex valide
 
 
 class TestLogEvent:
     def test_entree_ecrite(self):
         from orchestrator.state_machine import _log_event
+
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = Path(tmpdir)
             _log_event("run-test", "test_event", {"key": "value"}, log_dir)
@@ -46,6 +50,7 @@ class TestLogEvent:
 
     def test_signature_valide(self):
         from orchestrator.state_machine import _log_event, _sign_entry
+
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = Path(tmpdir)
             _log_event("run-test", "test_event", {"data": "important"}, log_dir)
@@ -57,6 +62,7 @@ class TestLogEvent:
 
     def test_multiple_entrees(self):
         from orchestrator.state_machine import _log_event
+
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = Path(tmpdir)
             for i in range(3):
@@ -69,7 +75,7 @@ class TestLogEvent:
 class TestVerifyJournal:
     def test_journal_integre(self):
         from orchestrator.state_machine import _log_event
-        import subprocess
+
         with tempfile.TemporaryDirectory() as tmpdir:
             log_dir = Path(tmpdir)
             _log_event("run-verify", "pipeline_start", {"goal": "test"}, log_dir)
