@@ -18,6 +18,7 @@ env:
   LOCAL_IMAGE_NAME: local/orchestrator:ci
 
 jobs:
+  # ── 1. Secret scan ─────────────────────────────────────────────────────────
   gitleaks:
     name: Secret scan
     runs-on: ubuntu-latest
@@ -34,8 +35,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ── 2. Qualité Python + sécurité statique ──────────────────────────────────
   python-quality:
-    name: Python quality
+    name: Python quality & SAST
     runs-on: ubuntu-latest
     needs: gitleaks
 
@@ -52,28 +54,70 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest ruff mypy fastapi uvicorn types-PyYAML
+          pip install -r requirements.txt
+          pip install mypy types-PyYAML bandit pip-audit
 
-      - name: Ruff
+      - name: Ruff (lint)
         run: ruff check .
 
-      - name: Mypy
-        run: |
-          if [ -d orchestrator ] || [ -d api ]; then
-            mypy orchestrator api --ignore-missing-imports
-          else
-            echo "No application package found, skipping mypy."
-          fi
+      - name: Ruff (format check)
+        run: ruff format --check .
 
-      - name: Pytest
-        run: |
-          if [ -d tests ]; then
-            pytest -q
-          else
-            echo "No tests directory found, skipping pytest."
-          fi
+      - name: Mypy (type check)
+        run: mypy orchestrator api --ignore-missing-imports
 
+      - name: Bandit (SAST — sécurité statique Python)
+        # -ll = sévérité medium+, -q = quiet, -r = récursif
+        # Bloque le pipeline si des problèmes de sécurité sont détectés
+        run: bandit -r orchestrator api -ll -q
+
+      - name: pip-audit (CVE dépendances Python)
+        # Échoue si des vulnérabilités connues avec fix disponible sont trouvées
+        run: pip-audit -r requirements.txt --fix-only-if-possible --skip-editable
+
+      - name: Pytest (tests unitaires + sécurité)
+        env:
+          AUTH_ENABLED: "true"
+          API_TOKEN_ADMIN: "ci-test-admin-token-xyz"
+          API_TOKEN_OPERATOR: "ci-test-operator-token-xyz"
+          API_TOKEN_READER: "ci-test-reader-token-xyz"
+          ANTHROPIC_API_KEY: "sk-ant-ci-test"
+          OPENAI_API_KEY: "sk-ci-test"
+        run: pytest -q --tb=short
+
+  # ── 3. SBOM (Software Bill of Materials) ───────────────────────────────────
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    needs: python-quality
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate Python SBOM (CycloneDX)
+        run: |
+          pip install cyclonedx-bom
+          cyclonedx-py environment --of json -o sbom-python.cyclonedx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-python
+          path: sbom-python.cyclonedx.json
+          retention-days: 90
+
+  # ── 4. Build Docker ────────────────────────────────────────────────────────
   docker-build:
     name: Docker buildx
     runs-on: ubuntu-latest
@@ -138,6 +182,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
 
+  # ── 5. Trivy CVE scan ──────────────────────────────────────────────────────
   trivy-image:
     name: Trivy image scan
     runs-on: ubuntu-latest
@@ -160,7 +205,7 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
             | sh -s -- -b /usr/local/bin
 
-      - name: Run Trivy on built image
+      - name: Run Trivy (SARIF — upload GitHub Security tab)
         run: |
           trivy image \
             --format sarif \
@@ -171,11 +216,35 @@ jobs:
             --scanners vuln \
             ${{ env.LOCAL_IMAGE_NAME }}
 
+      - name: Run Trivy (security gate — bloque si CRITICAL trouvé)
+        run: |
+          trivy image \
+            --severity CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --vuln-type os,library \
+            --scanners vuln \
+            ${{ env.LOCAL_IMAGE_NAME }}
+
       - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image-results.sarif
 
+      - name: Generate image SBOM with Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+          syft ${{ env.LOCAL_IMAGE_NAME }} -o cyclonedx-json > sbom-image.cyclonedx.json
+
+      - name: Upload image SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-image
+          path: sbom-image.cyclonedx.json
+          retention-days: 90
+
+  # ── 6. Grype CVE scan ──────────────────────────────────────────────────────
   grype-image:
     name: Grype image scan
     runs-on: ubuntu-latest
@@ -195,6 +264,6 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
             | sh -s -- -b /usr/local/bin
 
-      - name: Run Grype on built image
-        # --only-fixed exclut les CVE sans correctif upstream (ex: openssl "won't fix")
+      - name: Run Grype (security gate — bloque si HIGH+ avec fix disponible)
+        # --only-fixed : exclut les CVE sans correctif upstream
         run: grype ${{ env.LOCAL_IMAGE_NAME }} --fail-on high -o table --only-fixed
