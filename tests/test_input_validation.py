@@ -153,7 +153,9 @@ class TestSanitizeGoal:
     def test_goal_multiline_ok(self) -> None:
         from api.security import sanitize_goal
 
-        result = sanitize_goal("Fix bug in auth module:\n- Token expiry\n- Refresh logic")
+        result = sanitize_goal(
+            "Fix bug in auth module:\n- Token expiry\n- Refresh logic"
+        )
         assert result is not None
 
 

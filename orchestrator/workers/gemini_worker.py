@@ -49,7 +49,9 @@ def generate_plan(goal: str, repo_snapshot: str) -> dict[str, Any]:
     import yaml
 
     if not is_available():
-        raise RuntimeError("Gemini non configuré (GEMINI_API_KEY manquante ou fallback désactivé)")
+        raise RuntimeError(
+            "Gemini non configuré (GEMINI_API_KEY manquante ou fallback désactivé)"
+        )
 
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
 
@@ -104,7 +106,9 @@ Règles : max 3 tâches, atomiques, fichiers existants dans le repo. YAML unique
     try:
         data = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
-        raise RuntimeError(f"Gemini YAML invalide : {exc}\n\nRaw:\n{raw[:500]}") from exc
+        raise RuntimeError(
+            f"Gemini YAML invalide : {exc}\n\nRaw:\n{raw[:500]}"
+        ) from exc
 
     if not isinstance(data, dict) or "tasks" not in data:
         raise RuntimeError(f"Structure YAML Gemini inattendue : {raw[:300]}")

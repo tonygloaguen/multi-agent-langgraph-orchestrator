@@ -262,7 +262,11 @@ async def get_history(request: Request) -> dict:
             first = events[0]
             completed = sum(1 for e in events if e.get("event") == "task_completed")
             total = next(
-                (e.get("task_count", 0) for e in events if e.get("event") == "plan_generated"),
+                (
+                    e.get("task_count", 0)
+                    for e in events
+                    if e.get("event") == "plan_generated"
+                ),
                 0,
             )
             status_evt = next(
@@ -370,9 +374,12 @@ async def _run_pipeline_async(goal: str, repo_path: str, run_id: str) -> None:
     cmd = [
         sys.executable,
         str(PROJECT_ROOT / "orchestrator" / "state_machine_runner.py"),
-        "--goal", goal,
-        "--repo", repo_path or "",
-        "--run-id", run_id,
+        "--goal",
+        goal,
+        "--repo",
+        repo_path or "",
+        "--run-id",
+        run_id,
     ]
 
     env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}

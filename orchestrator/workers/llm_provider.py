@@ -72,8 +72,8 @@ class ProviderConfig:
     """Configuration d'un provider LLM."""
 
     name: str
-    bin_path: str | None = None       # Chemin binaire CLI
-    api_key_env: str | None = None    # Variable d'env pour la clé API
+    bin_path: str | None = None  # Chemin binaire CLI
+    api_key_env: str | None = None  # Variable d'env pour la clé API
     model: str | None = None
     timeout: int = 120
     extra_args: list[str] = field(default_factory=list)

@@ -42,9 +42,7 @@ def _call_claude(prompt: str) -> str:
 
     # Autres erreurs → RuntimeError compatible avec le code existant
     combined = (result.stdout + "\n" + result.stderr).strip()
-    raise RuntimeError(
-        f"Claude Code erreur (rc={result.rc}) : {combined[:500]}"
-    )
+    raise RuntimeError(f"Claude Code erreur (rc={result.rc}) : {combined[:500]}")
 
 
 def _clean_markdown(raw: str) -> str:

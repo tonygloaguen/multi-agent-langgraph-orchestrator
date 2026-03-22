@@ -140,7 +140,7 @@ class OrchestratorState(TypedDict, total=False):
     escalated: bool
     completed_tasks: list[str]
     errors: list[str]
-    status: str           # running | completed | failed
+    status: str  # running | completed | failed
     pipeline_status: str  # success | failed | degraded | fallback
 
 
@@ -297,13 +297,19 @@ def node_plan(state: OrchestratorState) -> dict:
             )
             _log_event(run_id, "provider_rate_limited", event_data, log_dir)
         else:
-            console.print(f"[yellow]Claude indisponible ({result.status.value}). Fallback Gemini...[/yellow]")
+            console.print(
+                f"[yellow]Claude indisponible ({result.status.value}). Fallback Gemini...[/yellow]"
+            )
             _log_event(run_id, "provider_failed", event_data, log_dir)
 
         _log_event(
             run_id,
             "fallback_started",
-            {"from_provider": "claude", "to_provider": "gemini", "reason": result.status.value},
+            {
+                "from_provider": "claude",
+                "to_provider": "gemini",
+                "reason": result.status.value,
+            },
             log_dir,
         )
 
