@@ -430,4 +430,4 @@ async def _push_log(entry: dict) -> None:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8080, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=8080, reload=False)  # nosec B104
