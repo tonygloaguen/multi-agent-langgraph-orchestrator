@@ -13,13 +13,14 @@
 5. [Workers LLM](#workers-llm)
 6. [Gestion d'état](#gestion-détat)
 7. [Journalisation et traçabilité](#journalisation-et-traçabilité)
-8. [Pipeline CI/CD](#pipeline-cicd)
-9. [Déploiement Docker](#déploiement-docker)
-10. [API Web (FastAPI + SSE)](#api-web-fastapi--sse)
-11. [Opérations de maintenance](#opérations-de-maintenance)
-12. [Ajout d'un agent / worker](#ajout-dun-agent--worker)
-13. [Matrice de compatibilité](#matrice-de-compatibilité)
-14. [Dépannage](#dépannage)
+8. [Sécurité API](#sécurité-api)
+9. [Pipeline CI/CD](#pipeline-cicd)
+10. [Déploiement Docker](#déploiement-docker)
+11. [API Web (FastAPI + SSE)](#api-web-fastapi--sse)
+12. [Opérations de maintenance](#opérations-de-maintenance)
+13. [Ajout d'un agent / worker](#ajout-dun-agent--worker)
+14. [Matrice de compatibilité](#matrice-de-compatibilité)
+15. [Dépannage](#dépannage)
 
 ---
 
@@ -29,23 +30,40 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                        ORCHESTRATEUR                            │
 │                                                                 │
-│   ┌──────────┐    ┌─────────────────────────────────────────┐  │
-│   │  API Web │    │           LangGraph State Machine        │  │
-│   │ FastAPI  │───▶│                                          │  │
-│   │  + SSE   │    │  INIT → PREFLIGHT → SNAPSHOT → PLAN     │  │
-│   └──────────┘    │        ↓                                 │  │
-│                   │  PREPARE_TASK → IMPLEMENT → VALIDATE     │  │
-│                   │                    ↓                     │  │
-│   ┌──────────┐    │              ANALYZE → REPAIR            │  │
-│   │   Logs   │◀───│                    ↓                     │  │
-│   │  JSONL   │    │          REVIEW → COMMIT → DONE          │  │
-│   │  (HMAC)  │    └─────────────────────────────────────────┘  │
-│   └──────────┘              │           │           │           │
-│                             ▼           ▼           ▼           │
-│                      ┌───────────┐ ┌────────┐ ┌─────────┐      │
-│                      │  Claude   │ │ Codex  │ │ Gemini  │      │
-│                      │ Code CLI  │ │  CLI   │ │(fallbk) │      │
-│                      └───────────┘ └────────┘ └─────────┘      │
+│   ┌──────────────────────────────────────────────────────────┐  │
+│   │  API Web (FastAPI + SSE)                                 │  │
+│   │  ┌────────────┐  ┌──────────┐  ┌──────────────────────┐ │  │
+│   │  │ Auth Bearer│  │  RBAC   │  │  Rate Limiting (IP)  │ │  │
+│   │  │ HMAC timing│  │ 3 rôles │  │  slowapi             │ │  │
+│   │  └────────────┘  └──────────┘  └──────────────────────┘ │  │
+│   │  ┌────────────────────────────────────────────────────┐  │  │
+│   │  │ Input Validation  │  Security Headers  │  CORS     │  │  │
+│   │  └────────────────────────────────────────────────────┘  │  │
+│   └──────────────────────────────────────────────────────────┘  │
+│                              │                                   │
+│                              ▼                                   │
+│                   ┌──────────────────────┐                       │
+│                   │  LangGraph State     │                       │
+│                   │  Machine             │                       │
+│                   │  INIT → PREFLIGHT   │                       │
+│                   │  → SNAPSHOT → PLAN  │                       │
+│                   │  → IMPLEMENT        │                       │
+│                   │  → VALIDATE         │                       │
+│                   │  → REVIEW → COMMIT  │                       │
+│                   │  → DONE             │                       │
+│                   └──────────────────────┘                       │
+│                        │         │         │                     │
+│                        ▼         ▼         ▼                     │
+│                 ┌───────────┐ ┌──────┐ ┌────────┐               │
+│                 │  Claude   │ │Codex │ │ Gemini │               │
+│                 │ Code CLI  │ │ CLI  │ │(fallbk)│               │
+│                 └───────────┘ └──────┘ └────────┘               │
+│                                                                 │
+│   ┌──────────────────────────────────────────────────────────┐  │
+│   │  Logs                                                    │  │
+│   │  logs/<run_id>.jsonl   (HMAC-SHA256, événements)         │  │
+│   │  logs/audit.jsonl      (HMAC-SHA256, accès HTTP/API)     │  │
+│   └──────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -58,7 +76,7 @@
 ### Flux de données
 
 ```
-goal (str)
+goal (str) → validation anti-injection
     │
     ▼ node_snapshot
 repo_snapshot (fichiers Python + git status)
@@ -102,10 +120,16 @@ diff Git (code implémenté)
 | LLM implémentation | Codex (OpenAI) | codex-mini-latest |
 | LLM fallback | Gemini (Google) | gemini-2.0-flash |
 | API Web | FastAPI | dernière |
+| Auth API | Bearer token (HMAC timing-safe) | — |
+| RBAC | 3 rôles : admin / operator / reader | — |
+| Rate limiting | slowapi (par IP) | dernière |
 | Streaming | Server-Sent Events | — |
 | Scan secrets | Gitleaks | 8.24+ |
+| SAST Python | Bandit | dernière |
+| Audit dépendances | pip-audit | dernière |
 | Conteneurisation | Docker | multi-arch |
 | Scan vulnérabilités | Trivy + Grype | dernières |
+| SBOM | CycloneDX (Python) + syft (image) | — |
 | Compression tokens | RTK | optionnel |
 
 ---
@@ -117,11 +141,11 @@ multi-agent-langgraph-orchestrator/
 │
 ├── orchestrator/               # Package principal
 │   ├── __init__.py
-│   ├── config.py               # Settings Pydantic v2 (chargement .env)
+│   ├── config.py               # Settings Pydantic v2 — SecretStr sur toutes les clés
 │   ├── state_machine.py        # Graphe LangGraph + tous les nœuds
 │   ├── state_machine_runner.py # Entrypoint CLI
 │   ├── schemas/
-│   │   └── __init__.py         # (extensible : schémas Pydantic partagés)
+│   │   └── __init__.py
 │   └── workers/
 │       ├── __init__.py
 │       ├── llm_provider.py     # Abstraction multi-provider (call_llm, fallback)
@@ -130,7 +154,8 @@ multi-agent-langgraph-orchestrator/
 │       └── gemini_worker.py    # Fallback résumé/plan
 │
 ├── api/
-│   ├── server.py               # FastAPI + SSE (routes /api/run/*)
+│   ├── server.py               # FastAPI + SSE + auth + RBAC + rate limiting + audit
+│   ├── security.py             # Middleware auth Bearer, RBAC, validation entrées
 │   └── static/
 │       └── index.html          # SPA minimaliste
 │
@@ -145,24 +170,31 @@ multi-agent-langgraph-orchestrator/
 │   ├── test_claude_worker.py   # Parsing, JSON extraction
 │   ├── test_codex_worker.py    # Comptage erreurs, RTK, régression
 │   ├── test_config.py          # Chargement settings
-│   └── test_nis2_journal.py    # Signatures HMAC journal
+│   ├── test_nis2_journal.py    # Signatures HMAC journal
+│   ├── test_api_security.py    # Auth Bearer, RBAC, timing-safe, rate limit
+│   └── test_input_validation.py # Anti-injection, payloads malveillants
 │
 ├── docs/
-│   ├── README.md               # Guide utilisateur
+│   ├── README.md               # Guide utilisateur (auth, tokens, RBAC, FAQ)
 │   ├── MAINTENANCE.md          # Ce document
 │   ├── SECURITE_NIS2_SECNUMCLOUD.md
+│   ├── INCIDENT_RESPONSE.md    # Procédures IR + scripts bash + matrice RACI
+│   ├── SECURITY_DECISIONS.md   # ADR — arbitrages sécurité documentés
 │   └── deployment.md           # Notes déploiement
 │
-├── logs/                       # JSONL signés (créé au runtime)
-├── .github/workflows/ci.yml    # Pipeline CI/CD GitHub Actions
-├── .env.example                # Template configuration
+├── logs/                       # JSONL signés HMAC (créé au runtime)
+│   ├── <run_id>.jsonl          # Événements d'orchestration
+│   └── audit.jsonl             # Audit log HTTP/API (IP, rôle, path, statut)
+│
+├── .github/workflows/ci.yml    # Pipeline CI/CD avec security gates
+├── .env.example                # Template configuration (avec nouveaux secrets auth)
 ├── .gitignore
-├── .gitleaks.toml              # Configuration scan secrets
-├── .pre-commit-config.yaml     # Hooks pre-commit
+├── .gitleaks.toml
+├── .pre-commit-config.yaml
 ├── Makefile
 ├── Dockerfile
 ├── requirements.txt
-└── CLAUDE.md                   # Règles projet (priorité maximale)
+└── CLAUDE.md
 ```
 
 ---
@@ -227,20 +259,20 @@ class OrchestratorState(TypedDict):
     goal: str
     repo_path: str
     repo_snapshot: dict
-    plan: dict                  # {plan_id, tasks: [...]}
+    plan: dict
     task_index: int
-    current_task: dict          # {id, description, files_allowed, ...}
-    handoff_path: str           # Chemin fichier YAML handoff
-    diff: str                   # git diff après implement
+    current_task: dict
+    handoff_path: str
+    diff: str
     ruff_out: str
     mypy_out: str
     test_out: str
     validation_passed: bool
     repair_attempts: int
-    analysis: dict              # {root_cause, repair_hints, files_to_fix, escalate}
-    review: dict                # {passed, issues, notes}
+    analysis: dict
+    review: dict
     errors: list[str]
-    events: list[dict]          # Journal structuré
+    events: list[dict]
 ```
 
 ---
@@ -249,14 +281,10 @@ class OrchestratorState(TypedDict):
 
 ### llm_provider.py — Couche d'abstraction
 
-Tous les appels LLM passent par cette couche. Elle normalise les résultats
-et gère le fallback automatique.
+Tous les appels LLM passent par cette couche.
 
 ```python
-# Appel simple
 result: ProviderResult = call_llm(config, prompt, cwd=repo_path)
-
-# Appel avec fallback automatique
 result: ProviderResult = call_llm_with_fallback(
     prompt,
     providers=[("claude", claude_config), ("gemini", gemini_config)]
@@ -274,25 +302,17 @@ result: ProviderResult = call_llm_with_fallback(
 | `PARSE_ERROR` | JSON invalide | Retry extraction regex |
 | `TOOL_NOT_FOUND` | CLI absent | Erreur critique |
 
-**Détection rate-limit (regex) :**
-```
-rate.limit | you've hit your limit | resets? at | usage limit
-```
-
 ### claude_worker.py
 
 Invoque le binaire `claude` en mode non-interactif (`--output-format stream-json`).
+Les clés API sont transmises via `.get_secret_value()` uniquement à l'invocation,
+jamais stockées en variable intermédiaire.
 
 | Fonction | Entrée | Sortie |
 |---|---|---|
 | `generate_plan(goal, snapshot)` | objectif + snapshot repo | `{plan_id, tasks[]}` |
 | `review_conformance(handoff, diff)` | fichier passation + diff | `{passed, issues, notes}` |
 | `analyze_failure(ruff, mypy, test, diff, files)` | sorties validation | `{root_cause, repair_hints, files_to_fix, escalate}` |
-
-**Extraction JSON robuste :**
-1. Tentative `json.loads()` direct
-2. Extraction regex sur `{...}` imbriqués (fallback)
-3. Nettoyage marqueurs markdown (` ```json `)
 
 ### codex_worker.py
 
@@ -303,14 +323,12 @@ Invoque `codex exec --dangerously-bypass-approvals-and-sandbox`.
 | `implement_task(handoff, repo_path)` | Implémentation initiale |
 | `repair_task(handoff, ..., attempt, analysis)` | Repair guidé avec contexte d'erreur |
 
-**Protection régression :** Après chaque repair, le worker compte les erreurs
-(ruff + mypy + pytest failures) avant/après. Si le count augmente, la branche
-est automatiquement resetée (`git checkout -- .`).
+**Protection régression :** Après chaque repair, le worker compare le nombre
+d'erreurs avant/après. Si ça empire : `git checkout -- .` automatique.
 
 **Intégration RTK :**
 ```python
 def _rtk(cmd: list[str]) -> list[str]:
-    """Wrap la commande avec rtk si disponible."""
     if shutil.which("rtk") and os.getenv("RTK_ENABLED", "true") == "true":
         return ["rtk"] + cmd
     return cmd
@@ -318,20 +336,13 @@ def _rtk(cmd: list[str]) -> list[str]:
 
 ### gemini_worker.py
 
-Utilise `langchain_google_genai.ChatGoogleGenerativeAI`. Réservé au fallback :
-- `generate_plan()` : même contrat que `claude_worker.generate_plan()`
-- `summarize_logs()` : résumé 5 lignes des logs (pour debugging)
-
-> Gemini n'a **pas d'autorité architecturale**. Son plan est utilisé uniquement
-> si Claude est indisponible (rate-limit, timeout).
+Fallback uniquement. N'a pas d'autorité architecturale.
 
 ---
 
 ## Gestion d'état
 
 ### Handoff YAML
-
-Pour chaque tâche, l'orchestrateur génère un fichier YAML dans `orchestrator/handoffs/` :
 
 ```yaml
 run_id: "abc123"
@@ -343,16 +354,14 @@ files_allowed:
 acceptance_criteria:
   - "pytest passe sans erreur"
   - "coverage > 80%"
-context: "..."   # Snapshot repo tronqué à ORCHESTRATOR_CONTEXT_MAX_TOKENS
-repair_hints: [] # Rempli lors des repairs
+context: "..."
+repair_hints: []
 attempt: 1
 ```
 
-Ces fichiers sont **exclus de Git** (`.gitignore`).
+Fichiers exclus de Git (`.gitignore`).
 
 ### State runs (JSONL)
-
-Chaque run produit `logs/<run_id>.jsonl`. Exemple d'entrée :
 
 ```json
 {
@@ -368,7 +377,25 @@ Chaque run produit `logs/<run_id>.jsonl`. Exemple d'entrée :
 }
 ```
 
-La clé de signature est dans `.orchestrator_signing_key` (chmod 0o600, générée automatiquement).
+### Audit log HTTP (logs/audit.jsonl)
+
+Chaque requête API produit une entrée signée :
+
+```json
+{
+  "ts": "2026-03-22T10:15:30Z",
+  "ip": "192.168.1.10",
+  "role": "operator",
+  "method": "POST",
+  "path": "/api/run",
+  "status": 200,
+  "duration_ms": 42,
+  "sig": "hmac-sha256:d4e5f6..."
+}
+```
+
+Les tokens Bearer ne sont **jamais** journalisés. Les security events
+(401, 403, 429) sont marqués `"security_event": true`.
 
 ---
 
@@ -376,22 +403,17 @@ La clé de signature est dans `.orchestrator_signing_key` (chmod 0o600, génér�
 
 ### Mécanisme HMAC-SHA256
 
-Chaque événement est signé avant écriture :
+Appliqué à **deux niveaux** : événements orchestration + accès HTTP.
 
 ```python
-import hashlib, hmac, json
-
 def sign_event(event: dict, key: bytes) -> str:
     payload = json.dumps(event, sort_keys=True).encode()
     return hmac.new(key, payload, hashlib.sha256).hexdigest()
 ```
 
-La signature est ajoutée sous la clé `"sig"` dans chaque entrée JSONL.
-
 ### Vérification d'intégrité
 
 ```bash
-# Vérifier qu'un fichier de log n'a pas été altéré
 python3 -c "
 import hmac, hashlib, json
 key = open('.orchestrator_signing_key','rb').read()
@@ -411,6 +433,86 @@ print('Toutes les signatures OK')
 | `INFO` | Progression normale (plan, implement, commit) |
 | `WARN` | Repair loop, fallback activé, tâche ignorée |
 | `ERROR` | Preflight échoué, timeout, clé absente |
+| `SECURITY` | Auth échouée, violation RBAC, payload suspect, rate limit |
+
+---
+
+## Sécurité API
+
+### Authentification Bearer
+
+L'API exige un token Bearer sur tous les endpoints sensibles.
+La comparaison est faite via `hmac.compare_digest` (timing-safe, résistant aux timing attacks).
+
+```bash
+# Appel authentifié
+curl -H "Authorization: Bearer <token>" http://localhost:8080/api/run/status
+```
+
+Les tokens sont configurés via variables d'environnement (voir `.env.example`).
+Jamais loggés, jamais exposés dans les réponses d'erreur.
+
+### RBAC — 3 rôles
+
+| Rôle | Actions autorisées |
+|---|---|
+| `admin` | Tout (run, stop, status, history, logs) |
+| `operator` | Lancer un run, consulter status et logs |
+| `reader` | Consulter status et history uniquement |
+
+Chaque endpoint déclare ses rôles requis via `Depends(require_roles(...))`.
+Une violation RBAC retourne HTTP 403 et génère un `security_event` dans audit.jsonl.
+
+### Rate limiting
+
+Configurable via `.env` :
+
+```dotenv
+RATE_LIMIT_RUN=5/minute      # POST /api/run
+RATE_LIMIT_DEFAULT=60/minute # Autres endpoints
+```
+
+Dépassement → HTTP 429 + entrée audit avec `security_event: true`.
+
+### Validation des entrées
+
+Le champ `goal` est validé contre 12 patterns d'injection connus :
+
+- `ignore.*instructions`, `exfiltrate`, `<system>`, `[INST]`, etc.
+- Longueur max : 2000 caractères
+- `repo_path` : blocage des caractères shell dangereux (`;`, `&`, `|`, `` ` ``, `$`, etc.)
+
+Payload rejeté → HTTP 422 + log security_event.
+
+### Headers de sécurité
+
+Ajoutés automatiquement par middleware sur toutes les réponses :
+
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+Content-Security-Policy: default-src 'self'
+Server: (supprimé)
+```
+
+CORS restreint à `CORS_ALLOWED_ORIGINS` (plus de wildcard `*`).
+
+### Génération des tokens
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Variables d'environnement à définir dans `.env` :
+
+```dotenv
+AUTH_ENABLED=true
+API_TOKEN_ADMIN=<token-généré>
+API_TOKEN_OPERATOR=<token-généré>
+API_TOKEN_READER=<token-généré>
+CORS_ALLOWED_ORIGINS=https://votre-domaine.com
+```
 
 ---
 
@@ -425,21 +527,35 @@ Push / PR
     │
     ├── Job: python-quality    → Ruff check + format
     │                          → Mypy strict
-    │                          → Pytest -q
+    │                          → Pytest -q (96 tests)
+    │
+    ├── Job: bandit-sast       → Analyse statique sécurité Python (medium+)
+    │                          → Échec sur HIGH/CRITICAL
+    │
+    ├── Job: pip-audit         → CVE sur dépendances Python
+    │                          → Échec si vulnérabilité fixable détectée
     │
     ├── Job: docker-build      → Build image multi-arch (linux/amd64, linux/arm64)
-    │                          → Cache GitHub Actions
     │
-    ├── Job: trivy-image       → Scan CVE HIGH/CRITICAL (Aqua Security Trivy)
+    ├── Job: trivy-image       → SARIF upload + security gate CRITICAL (exit-code 1)
     │
-    └── Job: grype-image       → Scan CVE --only-fixed (Anchore Grype)
+    ├── Job: grype-image       → Scan CVE --only-fixed
+    │
+    ├── Job: sbom-python       → CycloneDX (archivé 90j comme artefact CI)
+    │
+    └── Job: sbom-image        → syft image Docker (archivé 90j comme artefact CI)
 ```
+
+**Security gates actifs :** le pipeline échoue si :
+- secrets détectés (Gitleaks)
+- vulnérabilité CRITICAL dans l'image Docker (Trivy)
+- CVE fixable dans les dépendances Python (pip-audit)
+- test de sécurité échoué (pytest test_api_security.py, test_input_validation.py)
+- Bandit détecte un problème HIGH ou CRITICAL
 
 **Règle : aucun merge sans green CI.**
 
-### Pre-commit hooks (`.pre-commit-config.yaml`)
-
-Exécutés localement avant chaque commit :
+### Pre-commit hooks
 
 | Hook | Action |
 |---|---|
@@ -449,11 +565,10 @@ Exécutés localement avant chaque commit :
 | `check-json` | Valide la syntaxe JSON |
 | `check-merge-conflict` | Bloque les marqueurs de conflit |
 | `detect-private-key` | Bloque les clés privées |
-| `ruff-rtk` | Lint Python (ruff check --fix) + RTK si disponible |
-| `ruff-format-rtk` | Format Python (ruff format) + RTK si disponible |
+| `ruff-rtk` | Lint Python (ruff check --fix) |
+| `ruff-format-rtk` | Format Python (ruff format) |
 | `gitleaks` | Scan secrets complet |
 
-Installation des hooks :
 ```bash
 pip install pre-commit
 pre-commit install
@@ -479,19 +594,32 @@ docker run -d \
   multi-agent-orchestrator
 ```
 
-### Détails Dockerfile
+> En production, ne pas utiliser `--env-file` : injecter les secrets via
+> un gestionnaire dédié (Vault, AWS SSM, Docker Secrets).
 
+### Variables d'environnement requises
+
+Voir `.env.example` pour la liste complète. Variables critiques à définir :
+
+```dotenv
+# Authentification API (obligatoire si AUTH_ENABLED=true)
+AUTH_ENABLED=true
+API_TOKEN_ADMIN=<token-urlsafe-32>
+API_TOKEN_OPERATOR=<token-urlsafe-32>
+API_TOKEN_READER=<token-urlsafe-32>
+
+# LLM providers
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=...
+
+# CORS (production)
+CORS_ALLOWED_ORIGINS=https://votre-domaine.com
+
+# Rate limiting
+RATE_LIMIT_RUN=5/minute
+RATE_LIMIT_DEFAULT=60/minute
 ```
-Base : python:3.13-slim
-Port : 8080 (uvicorn api.server:app)
-User : non-root (recommandé pour prod)
-```
-
-### Variables d'environnement Docker
-
-Toutes les variables de `.env.example` sont supportées.
-En production, utiliser un gestionnaire de secrets (Vault, AWS SSM, etc.)
-plutôt que `--env-file`.
 
 ---
 
@@ -499,33 +627,32 @@ plutôt que `--env-file`.
 
 ### Routes disponibles
 
-| Méthode | Route | Description |
-|---|---|---|
-| `POST` | `/api/run` | Lancer un run (`{"goal": "...", "repo_path": "..."}`) |
-| `GET` | `/api/run/status` | Statut du run actif |
-| `GET` | `/api/run/history` | Historique des runs (depuis JSONL) |
-| `GET` | `/api/run/logs` | Stream SSE des logs en temps réel |
-| `POST` | `/api/run/stop` | Arrêter le run actif |
+| Méthode | Route | Rôles requis | Description |
+|---|---|---|---|
+| `POST` | `/api/run` | admin, operator | Lancer un run |
+| `GET` | `/api/run/status` | admin, operator, reader | Statut du run actif |
+| `GET` | `/api/run/history` | admin, operator, reader | Historique des runs |
+| `GET` | `/api/run/logs` | admin, operator | Stream SSE des logs |
+| `POST` | `/api/run/stop` | admin | Arrêter le run actif |
 
 ### SSE — Format des événements
 
 ```
 data: {"event": "node_entered", "node": "node_implement", "task": "...", "ts": "..."}
-
 data: {"event": "validate_failed", "errors": 3, "ts": "..."}
-
 data: {"event": "done", "status": "success", "commits": 2, "ts": "..."}
 ```
 
-Heartbeat toutes les 15 secondes si pas d'événement :
+Heartbeat toutes les 15 secondes :
 ```
 data: {"heartbeat": true}
 ```
 
 ### Limitations
 
-- **1 seul run actif à la fois** (semaphore en mémoire)
+- 1 seul run actif à la fois (semaphore en mémoire)
 - L'état est en mémoire : un redémarrage efface le run actif
+- Le rate limiting est en mémoire : réinitialisé au restart (utiliser Redis pour multi-instance)
 - L'historique est reconstruit depuis les fichiers JSONL au démarrage
 
 ---
@@ -535,25 +662,48 @@ data: {"heartbeat": true}
 ### Rotation de la clé de signature HMAC
 
 ```bash
-# Supprimer l'ancienne clé (les anciens logs ne seront plus vérifiables)
+# Archiver les anciens logs avant rotation (intégrité historique)
+cp -r logs/ logs_archive_$(date +%Y%m%d)/
+
+# Supprimer l'ancienne clé
 rm .orchestrator_signing_key
 # La nouvelle clé sera générée automatiquement au prochain run
 ```
 
-> **Attention** : Archiver les anciens logs avant rotation si la vérification
-> d'intégrité historique est requise (conformité NIS2).
+> **Attention NIS2 :** Les anciens logs ne seront plus vérifiables avec la nouvelle clé.
+> Archiver systématiquement avant rotation si la conformité l'exige.
+
+### Rotation des tokens API
+
+```bash
+# Générer de nouveaux tokens
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Mettre à jour .env (ou le gestionnaire de secrets en prod)
+# Redémarrer le service pour prendre en compte les nouveaux tokens
+docker restart orchestrator
+```
+
+> Les anciens tokens sont immédiatement invalides après redémarrage.
+> Voir `docs/INCIDENT_RESPONSE.md` pour la procédure en cas de compromission.
 
 ### Nettoyage des logs
 
 ```bash
 make clean         # Supprime caches, handoffs, logs
-# Ou manuellement :
+# Ou sélectif :
 find logs/ -name "*.jsonl" -mtime +90 -delete  # Supprimer logs > 90 jours
 ```
+
+> Conserver `logs/audit.jsonl` selon la durée de rétention définie par votre
+> politique de conformité (NIS2 recommande 12 mois minimum).
 
 ### Mise à jour des dépendances
 
 ```bash
+# Vérifier les CVE sur les dépendances actuelles
+pip-audit
+
 # Vérifier les mises à jour disponibles
 pip list --outdated
 
@@ -565,13 +715,15 @@ pip freeze > requirements.txt
 make validate
 ```
 
-### Mise à jour des modèles LLM
+### Régénération du SBOM
 
-Modifier dans `.env` :
-```dotenv
-CLAUDE_MODEL=claude-opus-4-6      # Vérifier disponibilité API
-CODEX_MODEL=codex-mini-latest
-GEMINI_MODEL=gemini-2.0-flash
+```bash
+# SBOM Python
+pip install cyclonedx-bom
+cyclonedx-py -e --format json -o sbom-python.json
+
+# SBOM image Docker
+syft multi-agent-orchestrator:latest -o cyclonedx-json > sbom-image.json
 ```
 
 ### Monitoring
@@ -585,6 +737,10 @@ Points à surveiller en production :
 | Taux d'appel fallback Gemini | count events `fallback_triggered` | > 20% |
 | Erreurs preflight | count events `preflight_error` | > 0 |
 | Taille des logs | `du -sh logs/` | > 10 GB |
+| Tentatives auth échouées | audit.jsonl security_event 401 | > 5 / 5 min |
+| Violations RBAC | audit.jsonl security_event 403 | > 0 |
+| Rate limit hits | audit.jsonl security_event 429 | > 10 / min |
+| Payload rejetés (injection) | audit.jsonl security_event 422 | > 0 |
 
 ---
 
@@ -592,21 +748,20 @@ Points à surveiller en production :
 
 Pour intégrer un nouveau LLM (ex: Mistral) :
 
-1. **Créer** `orchestrator/workers/mistral_worker.py` avec les mêmes signatures
-   que `claude_worker.py` :
+1. **Créer** `orchestrator/workers/mistral_worker.py` avec les mêmes signatures :
    ```python
    def generate_plan(goal: str, repo_snapshot: dict) -> dict: ...
    def review_conformance(handoff: dict, diff: str) -> dict: ...
    def analyze_failure(...) -> dict: ...
    ```
 
-2. **Ajouter** les variables de config dans `orchestrator/config.py` (Pydantic) :
+2. **Ajouter** les variables dans `orchestrator/config.py` en `SecretStr` :
    ```python
    mistral_api_key: SecretStr | None = None
    mistral_model: str = "mistral-large-latest"
    ```
 
-3. **Enregistrer** le provider dans `llm_provider.py` (liste `PROVIDERS`).
+3. **Enregistrer** dans `llm_provider.py` (liste `PROVIDERS`).
 
 4. **Documenter** le rôle dans `CLAUDE.md`.
 
@@ -628,11 +783,11 @@ Pour intégrer un nouveau LLM (ex: Mistral) :
 | LangGraph 0.3.x | Non testé | À valider | Breaking changes possibles |
 | Pydantic v2 | Oui | Oui | v1 non supportée |
 | Claude claude-opus-4-6 | Oui | Oui | Modèle recommandé |
-| Claude claude-sonnet-4-6 | Oui | Oui | Alternative (moins coûteux) |
+| Claude claude-sonnet-4-6 | Oui | Oui | Alternative moins coûteuse |
 | Codex codex-mini-latest | Oui | Oui | |
 | Gemini 2.0 Flash | Oui | Oui (fallback) | |
 | Docker linux/amd64 | Oui (CI) | Oui | |
-| Docker linux/arm64 | Oui (CI) | Oui | Apple Silicon |
+| Docker linux/arm64 | Oui (CI) | Oui | Apple Silicon / RPi 4 |
 | macOS (brew) | Oui | Oui | |
 | Ubuntu 22.04+ | Oui | Oui | |
 | Windows WSL2 | Partiel | Best-effort | Chemins absolus à adapter |
@@ -640,6 +795,24 @@ Pour intégrer un nouveau LLM (ex: Mistral) :
 ---
 
 ## Dépannage
+
+### Problème : `401 Unauthorized` sur l'API
+
+Vérifier que `AUTH_ENABLED=true` et que le token est correct dans `.env`.
+Tester :
+```bash
+curl -H "Authorization: Bearer <API_TOKEN_OPERATOR>" http://localhost:8080/api/run/status
+```
+
+### Problème : `403 Forbidden` sur un endpoint
+
+Le rôle du token utilisé n'a pas accès à cet endpoint.
+Consulter la table des rôles dans la section [RBAC](#rbac--3-rôles).
+
+### Problème : `429 Too Many Requests`
+
+Rate limit atteint. Attendre la fenêtre ou ajuster `RATE_LIMIT_*` dans `.env`.
+Pour un déploiement multi-instance, configurer Redis comme backend slowapi.
 
 ### Problème : `ModuleNotFoundError: No module named 'langgraph'`
 
@@ -650,19 +823,22 @@ pip install -r requirements.txt
 
 ### Problème : `FileNotFoundError: .orchestrator_signing_key`
 
-La clé HMAC est générée automatiquement au premier run. Si le fichier est
-absent manuellement, relancer un run et il sera recréé.
+La clé est générée automatiquement au premier run. Si absente, relancer un run.
+
+### Problème : signature HMAC invalide sur un log
+
+Log potentiellement altéré. Suivre la procédure `docs/INCIDENT_RESPONSE.md`
+section "Suspicion de falsification de logs".
 
 ### Problème : `mypy` strict échoue sur un nouveau fichier
 
-Ajouter les annotations de type manquantes. Références :
-- [Mypy cheatsheet](https://mypy.readthedocs.io/en/stable/cheat_sheet_py3.html)
-- Utiliser `reveal_type(x)` pour diagnostiquer
+Ajouter les annotations de type manquantes.
+Utiliser `reveal_type(x)` pour diagnostiquer.
 
 ### Problème : Gitleaks bloque un faux positif
 
-Ajouter le pattern dans `.gitleaks.toml` > `[allowlist]` > `regexes` :
 ```toml
+# .gitleaks.toml > [allowlist]
 [[allowlist.regexes]]
 description = "Token de test factice"
 regex = '''mon_token_de_test_[a-z]+'''
@@ -671,12 +847,10 @@ regex = '''mon_token_de_test_[a-z]+'''
 ### Problème : run bloqué (pas de sortie depuis > 5 min)
 
 ```bash
-make stop   # Arrête via pkill
-# Vérifier les logs
+make stop
 tail -f logs/<run_id>.jsonl
 ```
 
 ### Problème : repair loop infini apparent
 
 Vérifier `ORCHESTRATOR_MAX_REPAIR_LOOPS` dans `.env` (max 5 enforced par Pydantic).
-Un run ne peut pas boucler indéfiniment.
