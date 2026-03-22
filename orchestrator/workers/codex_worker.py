@@ -216,8 +216,7 @@ Ne pas modifier le comportement fonctionnel. Ne pas dépasser le scope.
     if regressed:
         files_to_reset = handoff.get("files_allowed", [])
         if files_to_reset:
-            reset_cmd = f"git checkout -- {' '.join(files_to_reset)}"
-            subprocess.run(reset_cmd, shell=True, cwd=repo_path)
+            subprocess.run(["git", "checkout", "--", *files_to_reset], cwd=repo_path)
 
     diff2 = subprocess.run(
         ["git", "diff"], cwd=repo_path, capture_output=True, text=True

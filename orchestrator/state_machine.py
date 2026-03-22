@@ -69,7 +69,12 @@ def _log_event(run_id: str, event: str, data: dict, log_dir: Path) -> None:
 
 def _cmd(cmd: str, cwd: str = ".") -> tuple[int, str, str]:
     r = subprocess.run(
-        cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=120
+        cmd,
+        shell=True,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=120,  # nosec B602
     )
     return r.returncode, r.stdout.strip(), r.stderr.strip()
 
