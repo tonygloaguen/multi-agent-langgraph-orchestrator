@@ -30,7 +30,7 @@ def _rtk(text: str) -> str:
 
 def _run_codex(prompt: str, repo_path: str) -> tuple[int, str, str]:
     """Lance codex exec en mode non-interactif."""
-    env = {**os.environ, "OPENAI_API_KEY": cfg.openai_api_key}
+    env = {**os.environ, "OPENAI_API_KEY": cfg.openai_api_key_value}
     try:
         result = subprocess.run(
             [CODEX_BIN, "exec", "--dangerously-bypass-approvals-and-sandbox", prompt],

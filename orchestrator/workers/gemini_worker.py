@@ -9,7 +9,7 @@ cfg = get_settings()
 
 
 def is_available() -> bool:
-    return bool(cfg.gemini_api_key and cfg.gemini_fallback_enabled)
+    return bool(cfg.gemini_api_key_value and cfg.gemini_fallback_enabled)
 
 
 def _content_to_text(content: Any) -> str:
@@ -81,7 +81,7 @@ Règles : max 3 tâches, atomiques, fichiers existants dans le repo. YAML unique
 
         llm = ChatGoogleGenerativeAI(
             model=cfg.gemini_model,
-            google_api_key=cfg.gemini_api_key,
+            google_api_key=cfg.gemini_api_key_value,
             max_output_tokens=4096,
         )
         r = llm.invoke(prompt)
@@ -124,7 +124,7 @@ def summarize_logs(logs: str) -> str:
 
         llm = ChatGoogleGenerativeAI(
             model=cfg.gemini_model,
-            google_api_key=cfg.gemini_api_key,
+            google_api_key=cfg.gemini_api_key_value,
             max_output_tokens=500,
         )
         r = llm.invoke(
