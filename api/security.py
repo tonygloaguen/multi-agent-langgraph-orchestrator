@@ -74,9 +74,20 @@ def _resolve_role(token: str) -> Role | None:
 
     cfg = get_settings()
     candidates: list[tuple[str | None, Role]] = [
-        (cfg.api_token_admin.get_secret_value() if cfg.api_token_admin else None, Role.admin),
-        (cfg.api_token_operator.get_secret_value() if cfg.api_token_operator else None, Role.operator),
-        (cfg.api_token_reader.get_secret_value() if cfg.api_token_reader else None, Role.reader),
+        (
+            cfg.api_token_admin.get_secret_value() if cfg.api_token_admin else None,
+            Role.admin,
+        ),
+        (
+            cfg.api_token_operator.get_secret_value()
+            if cfg.api_token_operator
+            else None,
+            Role.operator,
+        ),
+        (
+            cfg.api_token_reader.get_secret_value() if cfg.api_token_reader else None,
+            Role.reader,
+        ),
     ]
     for expected, role in candidates:
         if not expected:
