@@ -73,7 +73,7 @@ jobs:
 
       - name: pip-audit (CVE dépendances Python)
         # Échoue si des vulnérabilités connues avec fix disponible sont trouvées
-        run: pip-audit -r requirements.txt --fix-only-if-possible --skip-editable
+        run: pip-audit -r requirements.txt --skip-editable
 
       - name: Pytest (tests unitaires + sécurité)
         env:
