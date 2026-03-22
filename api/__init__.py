@@ -1,1 +1,1 @@
-"\"API package for the multi-agent orchestrator.\""
+"""API package for the multi-agent orchestrator."""
