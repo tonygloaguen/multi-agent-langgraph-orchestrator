@@ -228,12 +228,14 @@ jobs:
           sarif_file: trivy-image-results.sarif
 
       - name: Generate image SBOM with Syft
-        run: |
-          # Pin version explicite — ne jamais utiliser sans version (supply chain risk)
-          SYFT_VERSION="v1.18.1"
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b /usr/local/bin "${SYFT_VERSION}"
-          syft ${{ env.LOCAL_IMAGE_NAME }} -o cyclonedx-json > sbom-image.cyclonedx.json
+        # supply-chain hardening — action officielle pinnée, Dependabot trackera les MAJ
+        # Pas de curl|sh : l'action gère le téléchargement et la vérification du binaire
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: ${{ env.LOCAL_IMAGE_NAME }}
+          format: cyclonedx-json
+          output-file: sbom-image.cyclonedx.json
+          upload-artifact: false
 
       - name: Upload image SBOM artifact
         uses: actions/upload-artifact@v4
@@ -257,13 +259,13 @@ jobs:
       - name: Load Docker image
         run: docker load < docker-image.tar.gz
 
-      - name: Install Grype
-        run: |
-          # Pin version explicite — ne jamais utiliser sans version (supply chain risk)
-          GRYPE_VERSION="v0.83.0"
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
-            | sh -s -- -b /usr/local/bin "${GRYPE_VERSION}"
-
       - name: Run Grype (security gate — bloque si HIGH+ avec fix disponible)
-        # --only-fixed : exclut les CVE sans correctif upstream
-        run: grype ${{ env.LOCAL_IMAGE_NAME }} --fail-on high -o table --only-fixed
+        # supply-chain hardening — action officielle pinnée, Dependabot trackera les MAJ
+        # only-fixed : exclut les CVE sans correctif upstream (équivalent --only-fixed)
+        uses: anchore/scan-action@v7.4.0
+        with:
+          image: ${{ env.LOCAL_IMAGE_NAME }}
+          fail-build: 'true'
+          severity-cutoff: high
+          only-fixed: 'true'
+          output-format: table
