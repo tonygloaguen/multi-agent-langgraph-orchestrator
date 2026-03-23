@@ -523,7 +523,7 @@ Fichier : `.github/workflows/ci.yml`
 ```
 Push / PR
     │
-    ├── Job: gitleaks          → Scan secrets (actions/gitleaks-action@v2)
+    ├── Job: gitleaks          → Scan secrets (gitleaks/gitleaks-action@v2.3.9)
     │
     ├── Job: python-quality    → Ruff check + format
     │                          → Mypy strict
