@@ -202,7 +202,7 @@ jobs:
 
       - name: Run Trivy (SARIF — upload GitHub Security tab)
         # Action officielle avec version pinnée — élimine le curl|sh sans intégrité vérifiée
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.LOCAL_IMAGE_NAME }}
           format: sarif
@@ -213,7 +213,7 @@ jobs:
           scanners: vuln
 
       - name: Run Trivy (security gate — bloque si CRITICAL trouvé)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.LOCAL_IMAGE_NAME }}
           severity: CRITICAL
