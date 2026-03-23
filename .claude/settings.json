@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Read:*",
+      "Bash:git:*",
+      "Bash:docker:*",
+      "Bash:python3:*",
+      "Bash:pip:*",
+      "Bash:ruff:*",
+      "Bash:mypy:*",
+      "Bash:pytest:*",
+      "Bash:make:*",
+      "Write:*.py",
+      "Write:*.md",
+      "Write:*.yml",
+      "Write:*.yaml",
+      "Write:*.json",
+      "Write:Dockerfile"
+    ],
+    "deny": [
+      "Read:.env*",
+      "Write:.env*",
+      "Bash:sudo:*"
+    ]
+  }
+}

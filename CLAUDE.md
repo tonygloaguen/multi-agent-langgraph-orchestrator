@@ -27,3 +27,28 @@ identifie le point de divergence, propose ensuite le fix.
 
 ## Validation obligatoire avant commit
 ruff check . && mypy . --ignore-missing-imports && pytest -q
+
+## Commandes
+- run    : docker compose up -d
+- test   : make test  ou  pytest -q
+- lint   : ruff check . && ruff format --check . && mypy orchestrator api --ignore-missing-imports
+- build  : docker compose build
+- ci     : act -j python-quality  (test local du workflow)
+- audit  : /ci-audit
+
+## Fichiers critiques (confirmation obligatoire avant modification)
+- .env / .env.*
+- orchestrator/  (schémas Pydantic, interfaces publiques)
+- .github/workflows/ci.yml
+
+## Contraintes spécifiques
+- Pas de curl|bash ni wget|sh — binaires depuis releases taguées uniquement
+- Actions GitHub : toujours pinnées sur tag sémantique vX.Y.Z (jamais @main/@master)
+- Dependabot actif : github-actions + docker + pip (weekly, lundi)
+- gitleaks-action épinglé sur v2.3.9
+
+## Supply chain — procédure ajout nouvel outil CI
+1. Identifier l'action officielle (pas un fork)
+2. Trouver le dernier tag sémantique via : gh release list -R <owner>/<repo> --limit 5
+3. Épingler sur vX.Y.Z dans le workflow
+4. Dependabot trackera les mises à jour automatiquement
