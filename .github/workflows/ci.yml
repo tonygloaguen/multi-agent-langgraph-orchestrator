@@ -111,7 +111,7 @@ jobs:
           cyclonedx-py environment --of json -o sbom-python.cyclonedx.json
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-python
           path: sbom-python.cyclonedx.json
@@ -165,7 +165,7 @@ jobs:
         run: docker save ${{ env.LOCAL_IMAGE_NAME }} | gzip > /tmp/docker-image.tar.gz
 
       - name: Upload image artifact for scanning jobs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docker-image
           path: /tmp/docker-image.tar.gz
@@ -238,7 +238,7 @@ jobs:
           upload-artifact: false
 
       - name: Upload image SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-image
           path: sbom-image.cyclonedx.json
