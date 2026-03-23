@@ -200,31 +200,27 @@ jobs:
       - name: Load Docker image
         run: docker load < docker-image.tar.gz
 
-      - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b /usr/local/bin
-
       - name: Run Trivy (SARIF — upload GitHub Security tab)
-        run: |
-          trivy image \
-            --format sarif \
-            --output trivy-image-results.sarif \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            --vuln-type os,library \
-            --scanners vuln \
-            ${{ env.LOCAL_IMAGE_NAME }}
+        # Action officielle avec version pinnée — élimine le curl|sh sans intégrité vérifiée
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE_NAME }}
+          format: sarif
+          output: trivy-image-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln
 
       - name: Run Trivy (security gate — bloque si CRITICAL trouvé)
-        run: |
-          trivy image \
-            --severity CRITICAL \
-            --ignore-unfixed \
-            --exit-code 1 \
-            --vuln-type os,library \
-            --scanners vuln \
-            ${{ env.LOCAL_IMAGE_NAME }}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE_NAME }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          vuln-type: os,library
+          scanners: vuln
 
       - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -233,8 +229,10 @@ jobs:
 
       - name: Generate image SBOM with Syft
         run: |
+          # Pin version explicite — ne jamais utiliser sans version (supply chain risk)
+          SYFT_VERSION="v1.18.1"
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b /usr/local/bin
+            | sh -s -- -b /usr/local/bin "${SYFT_VERSION}"
           syft ${{ env.LOCAL_IMAGE_NAME }} -o cyclonedx-json > sbom-image.cyclonedx.json
 
       - name: Upload image SBOM artifact
@@ -261,8 +259,10 @@ jobs:
 
       - name: Install Grype
         run: |
+          # Pin version explicite — ne jamais utiliser sans version (supply chain risk)
+          GRYPE_VERSION="v0.83.0"
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
-            | sh -s -- -b /usr/local/bin
+            | sh -s -- -b /usr/local/bin "${GRYPE_VERSION}"
 
       - name: Run Grype (security gate — bloque si HIGH+ avec fix disponible)
         # --only-fixed : exclut les CVE sans correctif upstream
