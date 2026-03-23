@@ -208,7 +208,7 @@ print(f'{ok} entrées vérifiées — journal intègre')
 
 **Double filet :**
 - Local : hook pre-commit bloque avant le commit
-- CI/CD : job `gitleaks` bloque le merge
+- CI/CD : job `gitleaks` bloque le merge (gitleaks/gitleaks-action@v2.3.9 — tag sémantique fixe)
 
 Patterns couverts : `sk-ant-*` (Anthropic), `sk-*` (OpenAI), Google API keys,
 clés SSH, certificats, tokens JWT, Bearer tokens.
