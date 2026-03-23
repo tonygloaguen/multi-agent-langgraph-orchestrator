@@ -200,31 +200,27 @@ jobs:
       - name: Load Docker image
         run: docker load < docker-image.tar.gz
 
-      - name: Install Trivy
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b /usr/local/bin
-
       - name: Run Trivy (SARIF — upload GitHub Security tab)
-        run: |
-          trivy image \
-            --format sarif \
-            --output trivy-image-results.sarif \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            --vuln-type os,library \
-            --scanners vuln \
-            ${{ env.LOCAL_IMAGE_NAME }}
+        # Action officielle avec version pinnée — élimine le curl|sh sans intégrité vérifiée
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE_NAME }}
+          format: sarif
+          output: trivy-image-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln
 
       - name: Run Trivy (security gate — bloque si CRITICAL trouvé)
-        run: |
-          trivy image \
-            --severity CRITICAL \
-            --ignore-unfixed \
-            --exit-code 1 \
-            --vuln-type os,library \
-            --scanners vuln \
-            ${{ env.LOCAL_IMAGE_NAME }}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE_NAME }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          vuln-type: os,library
+          scanners: vuln
 
       - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -232,10 +228,14 @@ jobs:
           sarif_file: trivy-image-results.sarif
 
       - name: Generate image SBOM with Syft
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b /usr/local/bin
-          syft ${{ env.LOCAL_IMAGE_NAME }} -o cyclonedx-json > sbom-image.cyclonedx.json
+        # supply-chain hardening — action officielle pinnée, Dependabot trackera les MAJ
+        # Pas de curl|sh : l'action gère le téléchargement et la vérification du binaire
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: ${{ env.LOCAL_IMAGE_NAME }}
+          format: cyclonedx-json
+          output-file: sbom-image.cyclonedx.json
+          upload-artifact: false
 
       - name: Upload image SBOM artifact
         uses: actions/upload-artifact@v4
@@ -259,11 +259,13 @@ jobs:
       - name: Load Docker image
         run: docker load < docker-image.tar.gz
 
-      - name: Install Grype
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
-            | sh -s -- -b /usr/local/bin
-
       - name: Run Grype (security gate — bloque si HIGH+ avec fix disponible)
-        # --only-fixed : exclut les CVE sans correctif upstream
-        run: grype ${{ env.LOCAL_IMAGE_NAME }} --fail-on high -o table --only-fixed
+        # supply-chain hardening — action officielle pinnée, Dependabot trackera les MAJ
+        # only-fixed : exclut les CVE sans correctif upstream (équivalent --only-fixed)
+        uses: anchore/scan-action@v7.4.0
+        with:
+          image: ${{ env.LOCAL_IMAGE_NAME }}
+          fail-build: 'true'
+          severity-cutoff: high
+          only-fixed: 'true'
+          output-format: table
